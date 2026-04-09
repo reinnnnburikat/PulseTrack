@@ -3,30 +3,33 @@ generator client {
 }
 
 datasource db {
-  provider = "sqlite"
-  url      = env("DATABASE_URL")
+  provider  = "postgresql"
+  url       = env("DATABASE_URL")
+  directUrl = env("DIRECT_DATABASE_URL")
 }
 
 model User {
-  id           String   @id @default(cuid())
-  email        String   @unique
-  passwordHash String?
-  displayName  String?
-  avatarUrl    String?
-  bio          String?
-  provider     String   @default("email") // "email" or "google"
-  providerId   String?  // Google sub (user ID from Google)
-  createdAt    DateTime @default(now())
-  updatedAt    DateTime @updatedAt
+  id             String   @id @default(cuid())
+  email          String   @unique
+  passwordHash   String?
+  displayName    String?
+  avatarUrl      String?
+  bio            String?
+  provider       String   @default("email")
+  providerId     String?
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
 
-  sessions       Session[]
-  settings       UserSettings?
-  profiles       SessionProfile[]
-  quizResults    QuizResult[]
-  gamification   Gamification?
-  achievements   Achievement[]
+  sessions        Session[]
+  settings        UserSettings?
+  profiles        SessionProfile[]
+  quizResults     QuizResult[]
+  gamification    Gamification?
+  achievements    Achievement[]
   matchesInitiated UserMatch[] @relation("Initiator")
   matchesReceived  UserMatch[] @relation("Matched")
+
+  @@map("users")
 }
 
 model Session {
@@ -40,23 +43,27 @@ model Session {
   notes     String?
   updatedAt DateTime @updatedAt
 
-  user    User           @relation(fields: [userId], references: [id])
+  user    User            @relation(fields: [userId], references: [id])
   profile SessionProfile? @relation(fields: [profileId], references: [id])
+
+  @@map("sessions")
 }
 
 model UserSettings {
-  userId          String  @id
-  activeDuration  Int     @default(25)
-  restDuration    Int     @default(5)
-  intensityMode   Boolean @default(false)
-  tone            String  @default("teasing")
-  lockInMode      Boolean @default(false)
-  cycles          Int     @default(4)
-  infiniteCycles  Boolean @default(false)
-  soundEnabled    Boolean @default(true)
+  userId              String  @id
+  activeDuration      Int     @default(25)
+  restDuration        Int     @default(5)
+  intensityMode       Boolean @default(false)
+  tone                String  @default("teasing")
+  lockInMode          Boolean @default(false)
+  cycles              Int     @default(4)
+  infiniteCycles      Boolean @default(false)
+  soundEnabled        Boolean @default(true)
   notificationsEnabled Boolean @default(true)
 
   user User @relation(fields: [userId], references: [id])
+
+  @@map("user_settings")
 }
 
 model SessionProfile {
@@ -73,26 +80,32 @@ model SessionProfile {
 
   user     User      @relation(fields: [userId], references: [id])
   sessions Session[]
+
+  @@map("session_profiles")
 }
 
 model QuizQuestion {
   id       String @id @default(cuid())
   category String
   question String
-  options  String // JSON string of { label: string; scores: Record<string, number> }[]
+  options  String
+
+  @@map("quiz_questions")
 }
 
 model QuizResult {
   id               String   @id @default(cuid())
   userId           String
   createdAt        DateTime @default(now())
-  scores           String   // JSON Record<string, number>
+  scores           String
   dominantTrait    String
   rolePreference   String
-  kinks            String   // JSON string[]
+  kinks            String
   compatibilityType String
 
   user User @relation(fields: [userId], references: [id])
+
+  @@map("quiz_results")
 }
 
 model Prompt {
@@ -101,6 +114,8 @@ model Prompt {
   phase     String
   intensity Int
   content   String
+
+  @@map("prompts")
 }
 
 model Gamification {
@@ -114,6 +129,8 @@ model Gamification {
   lastSessionDate String?
 
   user User @relation(fields: [userId], references: [id])
+
+  @@map("gamification")
 }
 
 model Achievement {
@@ -128,18 +145,20 @@ model Achievement {
   user User @relation(fields: [userId], references: [id])
 
   @@unique([userId, achievementKey])
+  @@map("achievements")
 }
 
 model UserMatch {
-  id               String   @id @default(cuid())
-  userId           String
-  matchedUserId    String
+  id                String   @id @default(cuid())
+  userId            String
+  matchedUserId     String
   compatibilityScore Float
-  matchDetails     String   // JSON
-  createdAt        DateTime @default(now())
+  matchDetails      String
+  createdAt         DateTime @default(now())
 
   initiator User @relation("Initiator", fields: [userId], references: [id])
   matched   User @relation("Matched", fields: [matchedUserId], references: [id])
 
   @@unique([userId, matchedUserId])
+  @@map("user_matches")
 }
