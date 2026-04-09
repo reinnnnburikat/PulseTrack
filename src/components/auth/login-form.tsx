@@ -25,7 +25,7 @@ declare global {
   }
 }
 
-const GOOGLE_CLIENT_ID = process.env.NEXT_PUBLIC_GOOGLE_CLIENT_ID || ''
+const GOOGLE_CLIENT_ID = '238544153813-qg6s16ijk1rf4efan9ur7k0701c98aff.apps.googleusercontent.com'
 
 // Custom event types for GIS callback → React communication
 const GOOGLE_AUTH_LOADING = 'pulsetrack:google-loading'
