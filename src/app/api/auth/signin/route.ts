@@ -14,12 +14,16 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: 'Invalid email or password' }, { status: 401 })
     }
 
+    if (!user.passwordHash) {
+      return NextResponse.json({ error: 'This account uses Google sign-in. Please sign in with Google.' }, { status: 400 })
+    }
+
     const valid = await verifyPassword(password, user.passwordHash)
     if (!valid) {
       return NextResponse.json({ error: 'Invalid email or password' }, { status: 401 })
     }
 
-    const { token, expiresAt } = createSession(user.id)
+    const { token, expiresAt } = await createSession(user.id)
 
     const res = NextResponse.json({
       user: { id: user.id, email: user.email, displayName: user.displayName },
@@ -28,9 +32,9 @@ export async function POST(req: NextRequest) {
 
     res.cookies.set('pulsetrack-token', token, {
       httpOnly: true,
-      secure: false,
+      secure: process.env.NODE_ENV === 'production',
       sameSite: 'lax',
-      maxAge: Math.floor(expiresAt / 1000),
+      maxAge: 7 * 24 * 60 * 60, // 7 days
       path: '/',
     })
 

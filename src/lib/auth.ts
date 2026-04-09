@@ -1,55 +1,65 @@
-import { randomUUID } from 'crypto'
+import { SignJWT, jwtVerify } from 'jose'
 
-interface SessionData {
-  userId: string
-  expiresAt: number
+const JWT_SECRET = process.env.JWT_SECRET || 'pulsetrack-fallback-secret-change-me'
+
+// Get the secret as Uint8Array for jose
+function getSecret() {
+  return new TextEncoder().encode(JWT_SECRET)
 }
 
-// In-memory session store
-const sessions = new Map<string, SessionData>()
+const SESSION_DURATION = 7 * 24 * 60 * 60 // 7 days in seconds
 
-const SESSION_DURATION = 7 * 24 * 60 * 60 * 1000 // 7 days
+// Create a JWT token for the user
+export async function createSession(userId: string): Promise<{ token: string; expiresAt: number }> {
+  const expiresAt = Date.now() + SESSION_DURATION * 1000
 
-export function createSession(userId: string): { token: string; expiresAt: number } {
-  const token = randomUUID()
-  const expiresAt = Date.now() + SESSION_DURATION
-  sessions.set(token, { userId, expiresAt })
+  const token = await new SignJWT({ sub: userId })
+    .setProtectedHeader({ alg: 'HS256' })
+    .setIssuedAt()
+    .setExpirationTime(`${SESSION_DURATION}s`)
+    .sign(getSecret())
+
   return { token, expiresAt }
 }
 
-export function validateSession(token: string): SessionData | null {
-  const data = sessions.get(token)
-  if (!data) return null
-  if (Date.now() > data.expiresAt) {
-    sessions.delete(token)
-    return null
-  }
-  return data
+// Verify a JWT token and return the userId
+export function validateSession(token: string): { userId: string; expiresAt: number } | null {
+  // We do async verification in getUserId, this is a convenience wrapper
+  return null // Not used for JWT — getUserId handles verification directly
 }
 
-export function destroySession(token: string): void {
-  sessions.delete(token)
+// Destroy session — no-op for JWT (stateless), client just clears cookie
+export function destroySession(_token: string): void {
+  // JWT is stateless, nothing to destroy server-side
 }
 
 // Get userId from request (cookie or Authorization header)
 export async function getUserId(req: Request): Promise<string | null> {
+  let token: string | null = null
+
   // Try Authorization header first
   const authHeader = req.headers.get('Authorization')
   if (authHeader?.startsWith('Bearer ')) {
-    const token = authHeader.slice(7)
-    const session = validateSession(token)
-    if (session) return session.userId
+    token = authHeader.slice(7)
   }
 
   // Try cookie
-  const cookieHeader = req.headers.get('Cookie') || ''
-  const tokenMatch = cookieHeader.match(/pulsetrack-token=([^;]+)/)
-  if (tokenMatch) {
-    const session = validateSession(tokenMatch[1])
-    if (session) return session.userId
+  if (!token) {
+    const cookieHeader = req.headers.get('Cookie') || ''
+    const tokenMatch = cookieHeader.match(/pulsetrack-token=([^;]+)/)
+    if (tokenMatch) {
+      token = tokenMatch[1]
+    }
   }
 
-  return null
+  if (!token) return null
+
+  try {
+    const { payload } = await jwtVerify(token, getSecret())
+    return payload.sub as string
+  } catch {
+    return null
+  }
 }
 
 // Password hashing using scrypt

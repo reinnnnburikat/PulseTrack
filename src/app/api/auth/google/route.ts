@@ -17,7 +17,6 @@ interface GoogleTokenInfo {
 }
 
 async function verifyGoogleToken(idToken: string): Promise<GoogleTokenInfo> {
-  // Use Google's tokeninfo endpoint to verify the token
   const response = await fetch(
     `https://oauth2.googleapis.com/tokeninfo?id_token=${idToken}`
   )
@@ -28,12 +27,10 @@ async function verifyGoogleToken(idToken: string): Promise<GoogleTokenInfo> {
 
   const data = await response.json()
 
-  // Verify the token is still valid
   if (data.exp && data.exp < Date.now() / 1000) {
     throw new Error('Google token expired')
   }
 
-  // Verify email is verified
   if (!data.email_verified) {
     throw new Error('Email not verified by Google')
   }
@@ -52,10 +49,8 @@ export async function POST(req: NextRequest) {
       )
     }
 
-    // Verify the Google ID token
     const tokenInfo = await verifyGoogleToken(credential)
 
-    // Find existing user by Google provider ID or email
     let user = await db.user.findFirst({
       where: {
         OR: [
@@ -66,7 +61,6 @@ export async function POST(req: NextRequest) {
     })
 
     if (!user) {
-      // Create new user from Google account
       user = await db.user.create({
         data: {
           email: tokenInfo.email,
@@ -78,17 +72,14 @@ export async function POST(req: NextRequest) {
         },
       })
 
-      // Create default settings
       await db.userSettings.create({
         data: { userId: user.id },
       })
 
-      // Create default gamification
       await db.gamification.create({
         data: { userId: user.id },
       })
     } else if (user.provider !== 'google') {
-      // Link existing email account to Google
       user = await db.user.update({
         where: { id: user.id },
         data: {
@@ -98,7 +89,6 @@ export async function POST(req: NextRequest) {
         },
       })
     } else {
-      // Update avatar if changed
       if (tokenInfo.picture && tokenInfo.picture !== user.avatarUrl) {
         user = await db.user.update({
           where: { id: user.id },
@@ -107,8 +97,7 @@ export async function POST(req: NextRequest) {
       }
     }
 
-    // Create session
-    const { token, expiresAt } = createSession(user.id)
+    const { token, expiresAt } = await createSession(user.id)
 
     const res = NextResponse.json({
       user: {
@@ -122,9 +111,9 @@ export async function POST(req: NextRequest) {
 
     res.cookies.set('pulsetrack-token', token, {
       httpOnly: true,
-      secure: false,
+      secure: process.env.NODE_ENV === 'production',
       sameSite: 'lax',
-      maxAge: Math.floor(expiresAt / 1000),
+      maxAge: 7 * 24 * 60 * 60, // 7 days
       path: '/',
     })
 
