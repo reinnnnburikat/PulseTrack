@@ -311,7 +311,7 @@ export const useSyncStore = create<SyncState>((set, get) => ({
     const handleOffline = () => set({ isOnline: false })
 
     window.addEventListener('online', handleOnline)
-    window.removeEventListener('offline', handleOffline)
+    window.addEventListener('offline', handleOffline)
 
     const interval = setInterval(() => {
       if (get().isOnline) get().syncAll()

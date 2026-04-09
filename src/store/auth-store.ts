@@ -51,7 +51,7 @@ export const useAuthStore = create<AuthState>((set, get) => ({
         try {
           const settingsRes = await apiFetch('/api/settings')
           if (settingsRes.data) {
-            get().initSettings(settingsRes.data)
+            useSettingsStore.getState().initSettings(settingsRes.data)
           }
         } catch {}
 
