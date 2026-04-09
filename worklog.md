@@ -29,3 +29,40 @@ Stage Summary:
 - Radar chart visualizations in quiz results and match comparisons
 - All Phase 1 features preserved and working
 - All Phase 3 features implemented
+
+---
+Task ID: 2
+Agent: Main
+Task: Phase 3+4 — Bug fixes, enhancements, polish, production-ready
+
+Work Log:
+- Fixed broken `setView` import in discover-view.tsx (was importing non-existent named export)
+- Created Zustand match-store.ts to replace fragile `window.__selectedMatchUser` globals
+- Updated discover-view.tsx to use match store for user selection
+- Updated matches-view.tsx to use match store instead of window globals
+- Added `mood` column to Session model in Prisma schema (first-class field)
+- Added `bio` field to User model in Prisma schema
+- Pushed schema changes to SQLite via `bun run db:push`
+- Updated sessions API route to accept and return mood field
+- Updated Session type in types.ts to include mood field
+- Updated timer-store.ts to send mood directly (not embedded in notes JSON)
+- Created `/api/profile/update` endpoint (GET/PUT for display_name, bio, avatar_url)
+- Enhanced Settings view: working profile save with bio textarea (200 char limit), character counter, success toast
+- Enhanced History view: mood filter dropdown, mood column in table, updated CSV export, direct mood field usage
+- Enhanced Discover view: sort by compatibility/newest/most active, improved profile card layout
+- Enhanced Dashboard: weekly summary card with vs-last-week comparison, fixed mood extraction to use direct field
+- Fixed placeholder `/api/route.ts` to return API health status
+- Added `edge-warning-border` CSS animation for timer edging effect
+- Updated auth store UserInfo and profile types to include bio
+- Updated package name to "pulsetrack", version display to v3.0.0
+- All lint checks pass, committed and pushed to GitHub
+
+Stage Summary:
+- 15 files changed, 424 insertions, 53 deletions
+- Zero lint errors
+- All bugs fixed (window globals, broken imports, placeholder API)
+- Profile editing fully functional (display name + bio)
+- Mood tracking is now first-class (dedicated DB column, not JSON in notes)
+- Enhanced views with sorting, filtering, weekly summaries
+- Commit: 343e9c7 pushed to main
+- GitHub: https://github.com/reinnnnburikat/PulseTrack
