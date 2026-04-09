@@ -196,6 +196,12 @@ export const ACHIEVEMENT_DEFS: AchievementDef[] = [
   { key: 'quiz_complete', name: 'Self-Discovery', description: 'Complete the personality quiz', icon: '🧠', check: (_s, ctx) => (ctx?.quizCompleted ?? 0) >= 1 },
   { key: 'profile_created', name: 'Planner', description: 'Create a session profile', icon: '📋', check: (_s, ctx) => (ctx?.profilesCreated ?? 0) >= 1 },
   { key: 'longest_streak_7', name: 'Personal Best', description: 'Set a longest streak of 7+', icon: '🏅', check: (s) => s.longestStreak >= 7 },
+  { key: 'night_owl', name: 'Night Owl', description: 'Complete a session after midnight', icon: '🦉', check: (_s, ctx) => (ctx?.afterMidnight ?? 0) >= 1 },
+  { key: 'early_bird', name: 'Early Bird', description: 'Complete a session before 7 AM', icon: '🐦', check: (_s, ctx) => (ctx?.before7AM ?? 0) >= 1 },
+  { key: 'marathon', name: 'Marathon', description: 'Complete a session lasting 60+ minutes', icon: '🏃', check: (_s, ctx) => (ctx?.longSession ?? 0) >= 1 },
+  { key: 'double_streak', name: 'Double Digits', description: 'Reach a 10-day streak', icon: '🔥', check: (s) => s.streak >= 10 },
+  { key: 'intensity_master', name: 'Intensity Master', description: 'Complete 10 sessions at intensity 4+', icon: '⚡', check: (_s, ctx) => (ctx?.highIntensitySessions ?? 0) >= 10 },
+  { key: 'profile_master', name: 'Profile Collector', description: 'Create 5 session profiles', icon: '🎯', check: (_s, ctx) => (ctx?.profilesCreated ?? 0) >= 5 },
 ]
 
 // ---- Gamification Store ----

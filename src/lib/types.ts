@@ -135,3 +135,57 @@ export interface OfflineSession {
   notes: string | null
   synced: boolean
 }
+
+export interface OfflineSettings {
+  id?: number
+  user_id: string
+  active_duration: number
+  rest_duration: number
+  intensity_mode: boolean
+  tone: string
+  lock_in_mode: boolean
+  cycles: number
+  infinite_cycles: boolean
+  synced: boolean
+  updated_at: string
+}
+
+export interface OfflineProfile {
+  id?: number
+  profile_id: string
+  user_id: string
+  name: string
+  active_duration: number
+  rest_duration: number
+  cycles: number
+  infinite_cycles: boolean
+  tone: string
+  intensity_mode: boolean
+  synced: boolean
+  created_at: string
+}
+
+export interface OfflineGamification {
+  id?: number
+  user_id: string
+  streak: number
+  longest_streak: number
+  total_sessions: number
+  total_time: number
+  level: number
+  xp: number
+  last_session_date: string | null
+  synced: boolean
+  updated_at: string
+}
+
+export interface OfflineAchievement {
+  id?: number
+  achievement_key: string
+  user_id: string
+  name: string
+  description: string
+  icon: string
+  unlocked_at: string
+  synced: boolean
+}

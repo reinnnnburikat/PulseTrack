@@ -1,6 +1,8 @@
 'use client'
 
+import { useState } from 'react'
 import { useAuthStore } from '@/store/auth-store'
+import { useSyncStore } from '@/store/sync-store'
 import { LoginForm } from '@/components/auth/login-form'
 import { motion, AnimatePresence } from 'framer-motion'
 import {
@@ -11,9 +13,20 @@ import {
   Brain,
   Settings,
   LogOut,
+  CloudOff,
+  X,
+  Loader2,
+  CheckCircle2,
+  Circle,
 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
+import { Badge } from '@/components/ui/badge'
 import { Separator } from '@/components/ui/separator'
+import {
+  Tooltip,
+  TooltipTrigger,
+  TooltipContent,
+} from '@/components/ui/tooltip'
 import { cn } from '@/lib/utils'
 
 const navItems = [
@@ -25,8 +38,91 @@ const navItems = [
   { key: 'settings' as const, label: 'Settings', icon: Settings },
 ]
 
+function SyncStatusIcon({ className }: { className?: string }) {
+  const { lastSyncStatus, lastSyncAt } = useSyncStore()
+
+  const statusConfig = {
+    idle: { icon: Circle, color: 'text-muted-foreground' },
+    syncing: { icon: Loader2, color: 'text-primary', spin: true },
+    success: { icon: CheckCircle2, color: 'text-emerald-400' },
+    error: { icon: Circle, color: 'text-red-400' },
+  }
+
+  const config = statusConfig[lastSyncStatus]
+  const Icon = config.icon
+  const spin = 'spin' in config ? config.spin : false
+
+  const formatLastSync = (iso: string | null) => {
+    if (!iso) return 'Never synced'
+    const d = new Date(iso)
+    const now = new Date()
+    const diffMs = now.getTime() - d.getTime()
+    const diffSec = Math.floor(diffMs / 1000)
+    if (diffSec < 60) return 'Synced just now'
+    const diffMin = Math.floor(diffSec / 60)
+    if (diffMin < 60) return `Synced ${diffMin}m ago`
+    const diffHr = Math.floor(diffMin / 60)
+    if (diffHr < 24) return `Synced ${diffHr}h ago`
+    return `Synced ${d.toLocaleDateString()}`
+  }
+
+  return (
+    <Tooltip>
+      <TooltipTrigger asChild>
+        <div className={cn('cursor-default flex items-center', className)}>
+          <Icon className={cn('w-3.5 h-3.5', config.color, spin && 'animate-spin')} />
+        </div>
+      </TooltipTrigger>
+      <TooltipContent side="right" sideOffset={4}>
+        <p className="text-[11px]">{formatLastSync(lastSyncAt)}</p>
+        <p className="text-[10px] text-muted-foreground capitalize mt-0.5">
+          {lastSyncStatus === 'syncing' ? 'Syncing...' : lastSyncStatus}
+        </p>
+      </TooltipContent>
+    </Tooltip>
+  )
+}
+
+function OfflineBanner() {
+  const { isOnline, pendingCount } = useSyncStore()
+  const [dismissed, setDismissed] = useState(false)
+
+  if (isOnline || dismissed || pendingCount === 0) return null
+
+  return (
+    <motion.div
+      initial={{ opacity: 0, y: -20 }}
+      animate={{ opacity: 1, y: 0 }}
+      exit={{ opacity: 0, y: -20 }}
+      className="fixed top-14 left-0 right-0 z-40 md:top-0 md:left-56 md:right-0"
+    >
+      <div className="bg-amber-500/90 backdrop-blur-sm text-amber-950 px-4 py-2 flex items-center justify-between text-xs">
+        <div className="flex items-center gap-2">
+          <CloudOff className="w-4 h-4 shrink-0" />
+          <span className="font-medium">
+            You&apos;re offline — changes will sync when you&apos;re back online
+          </span>
+          {pendingCount > 0 && (
+            <Badge variant="secondary" className="bg-amber-950/20 text-amber-900 text-[10px] h-5 px-1.5 border-0">
+              {pendingCount} pending
+            </Badge>
+          )}
+        </div>
+        <button
+          onClick={() => setDismissed(true)}
+          className="ml-2 p-0.5 rounded hover:bg-amber-950/10 transition-colors"
+          aria-label="Dismiss offline banner"
+        >
+          <X className="w-3.5 h-3.5" />
+        </button>
+      </div>
+    </motion.div>
+  )
+}
+
 export function AppShell({ children }: { children: React.ReactNode }) {
   const { user, loading, profile, view, setView, signOut } = useAuthStore()
+  const { isOnline } = useSyncStore()
 
   // Loading state
   if (loading) {
@@ -54,6 +150,11 @@ export function AppShell({ children }: { children: React.ReactNode }) {
 
   return (
     <div className="min-h-screen flex flex-col bg-background">
+      {/* Offline Banner */}
+      <AnimatePresence>
+        <OfflineBanner />
+      </AnimatePresence>
+
       {/* Desktop Sidebar */}
       <div className="hidden md:flex h-screen fixed left-0 top-0 w-56 flex-col bg-card/50 backdrop-blur-xl border-r border-border/50 z-50">
         <div className="p-4 flex items-center gap-2">
@@ -100,6 +201,16 @@ export function AppShell({ children }: { children: React.ReactNode }) {
         </nav>
 
         <div className="p-3 border-t border-border/50">
+          {/* Sync Status in Sidebar Footer */}
+          <div className="flex items-center justify-between px-3 py-2 mb-2">
+            <div className="flex items-center gap-2">
+              <SyncStatusIcon />
+              <span className="text-[11px] text-muted-foreground">
+                {!isOnline ? 'Offline' : 'Connected'}
+              </span>
+            </div>
+          </div>
+
           <div className="flex items-center gap-3 px-3 py-2 mb-2">
             <div className="w-8 h-8 rounded-full bg-primary/20 flex items-center justify-center text-primary text-sm font-bold">
               {profile?.display_name?.[0]?.toUpperCase() || user.email?.[0]?.toUpperCase() || '?'}
@@ -131,8 +242,11 @@ export function AppShell({ children }: { children: React.ReactNode }) {
             PulseTrack
           </span>
         </div>
-        <div className="w-7 h-7 rounded-full bg-primary/20 flex items-center justify-center text-primary text-xs font-bold">
-          {profile?.display_name?.[0]?.toUpperCase() || user.email?.[0]?.toUpperCase() || '?'}
+        <div className="flex items-center gap-2">
+          <SyncStatusIcon />
+          <div className="w-7 h-7 rounded-full bg-primary/20 flex items-center justify-center text-primary text-xs font-bold">
+            {profile?.display_name?.[0]?.toUpperCase() || user.email?.[0]?.toUpperCase() || '?'}
+          </div>
         </div>
       </div>
 
