@@ -93,3 +93,26 @@ Stage Summary:
 - Avatar display: Google profile pictures shown in sidebar and mobile header via shadcn Avatar component
 - Account linking: existing email accounts automatically linked when user signs in with same Google email
 - Requirements: User needs to set `NEXT_PUBLIC_GOOGLE_CLIENT_ID` in `.env.local` and configure authorized domains in Google Cloud Console
+
+---
+Task ID: 1
+Agent: main
+Task: Fix Vercel serverless auth — switch from in-memory sessions to JWT
+
+Work Log:
+- Identified root cause: in-memory Map session store in auth.ts doesn't work on Vercel serverless (each cold start = new empty Map)
+- Installed jose@6.2.2 for JWT creation/verification
+- Rewrote src/lib/auth.ts: createSession now generates HS256 JWT, getUserId verifies JWT, destroySession is no-op (stateless)
+- Updated signup, signin, google auth routes to await createSession()
+- Updated cookie settings: secure=true in production, sameSite=lax
+- Simplified signout route (just clears cookie, no server-side state)
+- Added better error for Google-only accounts trying email signin
+- Fixed .env.local missing sslmode=require and JWT_SECRET
+- Fixed shell env DATABASE_URL override (old SQLite path file:/home/z/my-project/db/custom.db)
+- Tested signup API — returns 200 with valid JWT token
+- Committed and pushed to GitHub (b22c87e)
+
+Stage Summary:
+- Auth is now stateless (JWT) and works on Vercel serverless
+- User needs to add JWT_SECRET=z8iTiTqkEZ47g7BEleEIBeme1_XkFmRmyY2JYIewsgk to Vercel env vars
+- Login form already has email/password signup toggle (no UI changes needed)
