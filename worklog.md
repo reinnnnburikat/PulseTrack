@@ -409,3 +409,34 @@ Stage Summary:
 - Normal mode enhanced with ambient/breathing toggles and improved edging warnings
 - All existing Phase 1 + Phase 2 timer functionality fully preserved
 - Self-contained in single file — no new component files needed
+
+---
+Task ID: 3-b
+Agent: Main Developer
+Task: Create daily/weekly challenge system with store and definitions
+
+Work Log:
+- Created `src/lib/challenges.ts` with 15 challenge definitions (10 daily, 5 weekly)
+- Created `src/store/challenge-store.ts` with Zustand store
+- Challenges persist to localStorage, rotate daily/weekly
+- XP rewards integrated with gamification store
+- Progress tracking with check/getProgress functions
+
+Stage Summary:
+- Challenge system ready for integration into dashboard and timer completion flow
+- 15 unique challenges across 5 categories
+
+---
+Task ID: 3-d
+Agent: Main Developer
+Task: Create haptic feedback system using Vibration API
+
+Work Log:
+- Created `src/lib/haptics.ts` with 8 vibration pattern functions
+- Phase transitions, warnings, achievements, completion, tick, challenge patterns
+- Safe fallback for browsers without Vibration API
+- Toggle-able via setHapticEnabled/isHapticEnabled
+
+Stage Summary:
+- Haptic feedback system ready for integration into timer, dashboard, and challenges
+- Zero external dependencies, pure Web API

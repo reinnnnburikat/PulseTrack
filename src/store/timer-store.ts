@@ -1,9 +1,10 @@
 import { create } from 'zustand'
-import type { TimerState, Phase, TimerStatus, Tone } from '@/lib/types'
+import type { TimerState, Phase, TimerStatus, Tone, SessionMood } from '@/lib/types'
 import { createClient } from '@/lib/supabase'
 import { useSettingsStore } from './auth-store'
 import { playSound, startHeartbeat, stopHeartbeat } from '@/lib/audio'
 import { notifyPhaseChange, notifySessionComplete } from '@/lib/notifications'
+import { vibratePhaseTransition, vibrateWarning, vibrateComplete, vibrateTick } from '@/lib/haptics'
 
 interface TimerStore extends TimerState {
   currentPrompt: string | null
@@ -12,6 +13,7 @@ interface TimerStore extends TimerState {
   edgeCount: number
   focusMode: boolean
   lastFiveSeconds: boolean
+  sessionMood: SessionMood | null
 
   startTimer: (profile?: { active_duration: number; rest_duration: number; cycles: number; infinite_cycles: boolean; tone: Tone; intensity_mode: boolean }) => void
   pauseTimer: () => void
@@ -21,6 +23,7 @@ interface TimerStore extends TimerState {
   forceTransition: () => void
   completeSession: () => Promise<void>
   toggleFocusMode: () => void
+  setSessionMood: (mood: SessionMood | null) => void
 }
 
 export const useTimerStore = create<TimerStore>((set, get) => ({
@@ -44,6 +47,7 @@ export const useTimerStore = create<TimerStore>((set, get) => ({
   edgeCount: 0,
   focusMode: false,
   lastFiveSeconds: false,
+  sessionMood: null as SessionMood | null,
 
   startTimer: (profile) => {
     const settings = useSettingsStore.getState()
@@ -81,9 +85,10 @@ export const useTimerStore = create<TimerStore>((set, get) => ({
       lastFiveSeconds: false,
     })
 
-    // Audio + notifications
+    // Audio + notifications + haptics
     if (settings.soundEnabled) playSound('active-start')
     if (settings.notificationsEnabled) notifyPhaseChange('active', 1)
+    vibratePhaseTransition('active')
     if (intensityMode && settings.soundEnabled) {
       const heartbeatBPM = Math.min(120, 60 + streak * 5)
       startHeartbeat(heartbeatBPM)
@@ -134,10 +139,11 @@ export const useTimerStore = create<TimerStore>((set, get) => ({
     const activeTotal = state.activeDuration
     const isLastFive = newRemaining <= 5 && newRemaining > 0
 
-    // Last 5 seconds warning sound
+    // Last 5 seconds warning sound + haptic
     if (isLastFive && !state.lastFiveSeconds) {
       set({ lastFiveSeconds: true })
       if (settings.soundEnabled) playSound('warning')
+      vibrateTick()
     }
 
     // Edging warning at 85% of active phase
@@ -147,6 +153,7 @@ export const useTimerStore = create<TimerStore>((set, get) => ({
       if (elapsed >= threshold) {
         set({ showEdgingWarning: true })
         if (settings.soundEnabled) playSound('warning')
+        vibrateWarning()
         return
       }
     }
@@ -170,9 +177,12 @@ export const useTimerStore = create<TimerStore>((set, get) => ({
 
     set({ remainingSeconds: newRemaining, elapsedTime: newElapsed, lastFiveSeconds: isLastFive })
 
-    // Tick sound every 15 seconds
+    // Tick sound every 15 seconds + haptic
     if (settings.soundEnabled && newElapsed % 15 === 0) {
       playSound(state.phase === 'active' ? 'active-tick' : 'rest-tick')
+    }
+    if (newElapsed % 30 === 0) {
+      vibrateTick()
     }
 
     // Show prompts at intervals (every 30s)
@@ -197,6 +207,7 @@ export const useTimerStore = create<TimerStore>((set, get) => ({
       })
       if (settings.soundEnabled) playSound('rest-start')
       if (settings.notificationsEnabled) notifyPhaseChange('rest', state.cycle)
+      vibratePhaseTransition('rest')
       if (state.intensityMode) get().fetchPrompt()
     } else {
       // Rest complete, next cycle
@@ -205,6 +216,7 @@ export const useTimerStore = create<TimerStore>((set, get) => ({
         set({ status: 'completed', phase: 'active', showEdgingWarning: false })
         stopHeartbeat()
         if (settings.soundEnabled) playSound('complete')
+        vibrateComplete()
         if (settings.notificationsEnabled) {
           notifySessionComplete(state.cycle, state.elapsedTime)
         }
@@ -224,6 +236,7 @@ export const useTimerStore = create<TimerStore>((set, get) => ({
       })
       if (settings.soundEnabled) playSound('active-start')
       if (settings.notificationsEnabled) notifyPhaseChange('active', nextCycle)
+      vibratePhaseTransition('active')
       if (state.intensityMode) get().fetchPrompt()
 
       // Speed up heartbeat with intensity
@@ -261,6 +274,12 @@ export const useTimerStore = create<TimerStore>((set, get) => ({
 
     const duration = state.elapsedTime
 
+    // Build notes with mood and focus mode metadata
+    const metadata: Record<string, unknown> = {}
+    if (state.sessionMood) metadata.mood = state.sessionMood
+    if (state.focusMode) metadata.focusModeUsed = true
+    const notes = Object.keys(metadata).length > 0 ? JSON.stringify(metadata) : null
+
     // Save session to Supabase
     const supabase = createClient()
     await supabase.from('sessions').insert({
@@ -268,6 +287,7 @@ export const useTimerStore = create<TimerStore>((set, get) => ({
       duration,
       intensity: state.currentIntensity,
       profile: state.activeProfileId,
+      notes,
     })
 
     // Update gamification with context for achievement checking
@@ -287,13 +307,49 @@ export const useTimerStore = create<TimerStore>((set, get) => ({
         duration,
         intensity: state.currentIntensity,
         profile: state.activeProfileId,
-        notes: null,
+        notes,
         synced: true,
       })
     } catch {}
 
+    // Check challenges after session completion
+    try {
+      const { useChallengeStore } = await import('@/store/challenge-store')
+      const { useGamificationStore: gamStore } = await import('./auth-store')
+      const gam = gamStore.getState()
+      // Build challenge stats from today's data
+      const { useAuthStore } = await import('./auth-store')
+      const authState = useAuthStore.getState()
+      const supabaseForChallenges = createClient()
+      const todayStr = new Date().toISOString().split('T')[0]
+      const weekAgo = new Date(Date.now() - 7 * 86400000).toISOString()
+      const [todayRes, weekRes] = await Promise.all([
+        supabaseForChallenges.from('sessions').select('duration, intensity').eq('user_id', user.id).gte('created_at', todayStr),
+        supabaseForChallenges.from('sessions').select('duration, intensity').eq('user_id', user.id).gte('created_at', weekAgo),
+      ])
+      const todaySessions = todayRes.data || []
+      const weekSessions = weekRes.data || []
+      useChallengeStore.getState().checkChallenges({
+        todaySessions: todaySessions.length,
+        todayDuration: Math.round(todaySessions.reduce((a, s: any) => a + s.duration, 0) / 60),
+        todayMaxIntensity: todaySessions.length > 0 ? Math.max(...todaySessions.map((s: any) => s.intensity)) : 0,
+        weekSessions: weekSessions.length,
+        weekDuration: Math.round(weekSessions.reduce((a, s: any) => a + s.duration, 0) / 60),
+        weekMaxIntensity: weekSessions.length > 0 ? Math.max(...weekSessions.map((s: any) => s.intensity)) : 0,
+        currentStreak: gam.streak,
+        focusModeSessionsToday: todaySessions.filter((s: any) => {
+          try { return JSON.parse(s.notes || '{}').focusModeUsed } catch { return false }
+        }).length,
+      })
+    } catch {}
+
     stopHeartbeat()
+    set({ sessionMood: null })
     get().resetTimer()
+  },
+
+  setSessionMood: (mood: SessionMood | null) => {
+    set({ sessionMood: mood })
   },
 
   toggleFocusMode: async () => {

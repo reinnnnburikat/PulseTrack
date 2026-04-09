@@ -42,6 +42,7 @@ import { toast } from 'sonner'
 import type { Tone } from '@/lib/types'
 import { deleteSyncedSessions, clearAllOfflineData } from '@/lib/db-offline'
 import { setMasterVolume, setAmbientVolume } from '@/lib/audio'
+import { setHapticEnabled, isHapticEnabled } from '@/lib/haptics'
 import {
   scheduleDailyReminder,
   cancelDailyReminder,
@@ -78,6 +79,9 @@ export function SettingsView() {
   const [reminderHour, setReminderHour] = useState(9)
   const [reminderMinute, setReminderMinute] = useState(0)
   const [nextReminderTime, setNextReminderTime] = useState<Date | null>(null)
+
+  // Haptic feedback state
+  const [hapticOn, setHapticOn] = useState(true)
 
   // Offline data state
   const [showClearConfirm, setShowClearConfirm] = useState(false)
@@ -491,6 +495,19 @@ export function SettingsView() {
               step={1}
               className="py-1"
             />
+          </div>
+
+          <Separator className="bg-border/30" />
+
+          <div className="flex items-center justify-between">
+            <div>
+              <Label className="text-xs">Haptic Feedback</Label>
+              <p className="text-[10px] text-muted-foreground mt-0.5">Vibration on phase transitions & achievements</p>
+            </div>
+            <Switch checked={hapticOn} onCheckedChange={(v) => {
+              setHapticOn(v)
+              setHapticEnabled(v)
+            }} />
           </div>
 
           <Separator className="bg-border/30" />

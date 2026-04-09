@@ -47,7 +47,8 @@ import {
   Maximize,
   Minimize,
 } from 'lucide-react'
-import type { SessionProfile, Tone } from '@/lib/types'
+import type { SessionProfile, Tone, SessionMood } from '@/lib/types'
+import { MOOD_CONFIG } from '@/lib/types'
 
 // ---- Floating Particles Component ----
 
@@ -447,11 +448,37 @@ export function TimerView() {
   }
 
   const [showLockInDialog, setShowLockInDialog] = useState(false)
-  const [showCompleteDialog, setShowCompleteDialog] = useState(timer.status === 'completed')
+  const [showCompleteDialog, setShowCompleteDialog] = useState(false)
+  const [showMoodSelector, setShowMoodSelector] = useState(false)
+  const [selectedMood, setSelectedMood] = useState<SessionMood | null>(null)
+  const [moodAnimating, setMoodAnimating] = useState(false)
 
+  // When timer completes, show mood selector first
   useEffect(() => {
-    if (timer.status === 'completed') setShowCompleteDialog(true)
+    if (timer.status === 'completed') {
+      setShowMoodSelector(true)
+      setShowCompleteDialog(false)
+    }
   }, [timer.status])
+
+  // When mood selector is dismissed (skip or select), show completion dialog
+  const handleMoodSelect = useCallback((mood: SessionMood) => {
+    setSelectedMood(mood)
+    timer.setSessionMood(mood)
+    setMoodAnimating(true)
+    setTimeout(() => {
+      setShowMoodSelector(false)
+      setShowCompleteDialog(true)
+      setMoodAnimating(false)
+    }, 300)
+  }, [timer])
+
+  const handleMoodSkip = useCallback(() => {
+    setSelectedMood(null)
+    timer.setSessionMood(null)
+    setShowMoodSelector(false)
+    setShowCompleteDialog(true)
+  }, [timer])
 
   // ---- Phase-based gradient configs ----
   const gradientBg = timer.phase === 'active'
@@ -1010,6 +1037,140 @@ export function TimerView() {
       </AnimatePresence>
 
       {/* ==========================================================
+           MOOD SELECTOR OVERLAY (post-session)
+           ========================================================== */}
+      <AnimatePresence>
+        {showMoodSelector && (
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            transition={{ duration: 0.5, ease: 'easeInOut' }}
+            className="fixed inset-0 z-[110] flex items-center justify-center bg-gradient-to-b from-violet-950/85 via-purple-950/90 to-fuchsia-950/85 backdrop-blur-sm overflow-hidden"
+          >
+            {/* Soft animated radial accent */}
+            <motion.div
+              className="absolute inset-0 pointer-events-none"
+              animate={{
+                background: [
+                  'radial-gradient(circle at 30% 30%, oklch(0.60 0.15 300 / 15%) 0%, transparent 50%)',
+                  'radial-gradient(circle at 70% 70%, oklch(0.55 0.18 330 / 15%) 0%, transparent 50%)',
+                  'radial-gradient(circle at 50% 50%, oklch(0.60 0.12 280 / 12%) 0%, transparent 50%)',
+                  'radial-gradient(circle at 30% 30%, oklch(0.60 0.15 300 / 15%) 0%, transparent 50%)',
+                ],
+              }}
+              transition={{ duration: 10, repeat: Infinity, ease: 'easeInOut' }}
+            />
+
+            {/* Soft floating particles */}
+            <div className="absolute inset-0 overflow-hidden pointer-events-none">
+              {Array.from({ length: 15 }, (_, i) => (
+                <motion.div
+                  key={i}
+                  className="absolute rounded-full bg-violet-400/20"
+                  style={{
+                    left: `${Math.random() * 100}%`,
+                    bottom: '-10px',
+                    width: 3 + Math.random() * 4,
+                    height: 3 + Math.random() * 4,
+                    opacity: 0.15 + Math.random() * 0.2,
+                  }}
+                  animate={{
+                    y: [0, -(typeof window !== 'undefined' ? window.innerHeight : 800) - 20],
+                    x: [0, (Math.random() - 0.5) * 40],
+                    opacity: [0.15, 0.3, 0],
+                  }}
+                  transition={{
+                    duration: 10 + Math.random() * 10,
+                    delay: Math.random() * 8,
+                    repeat: Infinity,
+                    ease: 'linear',
+                  }}
+                />
+              ))}
+            </div>
+
+            {/* Centered mood card */}
+            <motion.div
+              initial={{ scale: 0.9, opacity: 0, y: 20 }}
+              animate={{ scale: 1, opacity: 1, y: 0 }}
+              exit={{ scale: 0.95, opacity: 0, y: -10 }}
+              transition={{ type: 'spring', damping: 25, stiffness: 300 }}
+              className="relative z-10 bg-card/80 backdrop-blur-xl border border-border/40 rounded-2xl p-6 md:p-8 mx-4 max-w-md w-full shadow-2xl"
+            >
+              {/* Celebration icon */}
+              <motion.div
+                initial={{ scale: 0, rotate: -180 }}
+                animate={{ scale: 1, rotate: 0 }}
+                transition={{ delay: 0.2, type: 'spring', damping: 15, stiffness: 200 }}
+                className="w-16 h-16 mx-auto mb-4 rounded-full bg-primary/15 flex items-center justify-center"
+              >
+                <Trophy className="w-8 h-8 text-amber-400" />
+              </motion.div>
+
+              <h2 className="text-xl font-bold text-center mb-1">
+                How did that feel?
+              </h2>
+              <p className="text-sm text-muted-foreground text-center mb-6">
+                Tap a mood to record how your session went
+              </p>
+
+              {/* Mood grid */}
+              <div className="grid grid-cols-2 md:grid-cols-4 gap-2.5">
+                {(Object.keys(MOOD_CONFIG) as SessionMood[]).map((mood, index) => {
+                  const config = MOOD_CONFIG[mood]
+                  const isSelected = selectedMood === mood
+                  return (
+                    <motion.button
+                      key={mood}
+                      initial={{ opacity: 0, y: 15 }}
+                      animate={{ opacity: 1, y: 0 }}
+                      transition={{ delay: 0.1 + index * 0.05, duration: 0.3 }}
+                      whileHover={{ scale: 1.05 }}
+                      whileTap={{ scale: 0.95 }}
+                      onClick={() => !moodAnimating && handleMoodSelect(mood)}
+                      disabled={moodAnimating}
+                      className={`relative flex items-center gap-2 px-3 py-2.5 rounded-full border transition-all duration-200 cursor-pointer disabled:cursor-default ${
+                        isSelected
+                          ? 'border-primary bg-primary/15 shadow-[0_0_12px_oklch(0.72_0.18_320/25%)]'
+                          : 'border-border/50 bg-muted/30 hover:bg-muted/50 hover:border-border'
+                      }`}
+                    >
+                      <span className="text-lg leading-none">{config.emoji}</span>
+                      <span className={`text-xs font-medium ${isSelected ? config.color : 'text-muted-foreground'}`}>
+                        {config.label}
+                      </span>
+                      {/* Selected glow pulse */}
+                      {isSelected && (
+                        <motion.div
+                          layoutId="mood-glow"
+                          className="absolute inset-0 rounded-full border-2 border-primary/40"
+                          initial={{ opacity: 0 }}
+                          animate={{ opacity: [0.5, 1, 0.5] }}
+                          transition={{ duration: 1.5, repeat: Infinity }}
+                        />
+                      )}
+                    </motion.button>
+                  )
+                })}
+              </div>
+
+              {/* Skip link */}
+              <div className="mt-5 text-center">
+                <button
+                  onClick={handleMoodSkip}
+                  disabled={moodAnimating}
+                  className="text-xs text-muted-foreground hover:text-muted-foreground/80 transition-colors disabled:cursor-default"
+                >
+                  Skip for now
+                </button>
+              </div>
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
+      {/* ==========================================================
            DIALOGS (always rendered, not inside focus overlay)
            ========================================================== */}
 
@@ -1040,6 +1201,14 @@ export function TimerView() {
                 <Zap className="w-3 h-3 text-amber-400" /> {timer.currentIntensity}
               </span>
             </div>
+            {selectedMood && (
+              <div className="flex justify-between text-sm">
+                <span className="text-muted-foreground">Mood</span>
+                <span className={`font-medium flex items-center gap-1 ${MOOD_CONFIG[selectedMood].color}`}>
+                  {MOOD_CONFIG[selectedMood].emoji} {MOOD_CONFIG[selectedMood].label}
+                </span>
+              </div>
+            )}
           </div>
           <DialogFooter>
             <Button

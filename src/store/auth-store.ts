@@ -87,6 +87,12 @@ export const useAuthStore = create<AuthState>((set, get) => ({
         set({ loading: false })
       }
 
+      // Initialize challenges
+      try {
+        const { useChallengeStore } = await import('@/store/challenge-store')
+        useChallengeStore.getState().initializeChallenges()
+      } catch {}
+
       // Listen for auth changes
       supabase.auth.onAuthStateChange(async (event, session) => {
         if (event === 'SIGNED_IN' && session?.user) {

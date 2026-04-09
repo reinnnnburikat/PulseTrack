@@ -39,7 +39,8 @@ import { Calendar } from '@/components/ui/calendar'
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
 import { Plus, Trash2, Edit3, Download, CalendarDays, List, ChevronLeft, ChevronRight } from 'lucide-react'
 import { format, parseISO, startOfMonth, endOfMonth, eachDayOfInterval, isSameDay, isSameMonth } from 'date-fns'
-import type { Session } from '@/lib/types'
+import type { Session, SessionMood } from '@/lib/types'
+import { MOOD_CONFIG } from '@/lib/types'
 
 export function HistoryView() {
   const { user } = useAuthStore()
@@ -225,7 +226,10 @@ export function HistoryView() {
                       </tr>
                     </thead>
                     <tbody>
-                      {paginatedSessions.map((s: Session, i: number) => (
+                      {paginatedSessions.map((s: Session, i: number) => {
+                        let sessionMood: SessionMood | null = null
+                        try { const meta = JSON.parse(s.notes || '{}'); sessionMood = meta.mood || null } catch {}
+                        return (
                         <motion.tr
                           key={s.id}
                           initial={{ opacity: 0, y: 5 }}
@@ -233,7 +237,12 @@ export function HistoryView() {
                           transition={{ delay: i * 0.02 }}
                           className="border-b border-border/30 hover:bg-accent/30 transition-colors"
                         >
-                          <td className="p-3 text-sm">{format(parseISO(s.created_at), 'MMM d, h:mm a')}</td>
+                          <td className="p-3 text-sm">
+                            <div className="flex items-center gap-2">
+                              {sessionMood && <span className="text-xs">{MOOD_CONFIG[sessionMood]?.emoji}</span>}
+                              {format(parseISO(s.created_at), 'MMM d, h:mm a')}
+                            </div>
+                          </td>
                           <td className="p-3 text-sm font-medium">{formatDuration(s.duration)}</td>
                           <td className="p-3 hidden sm:table-cell">
                             <Badge variant="outline" className={`text-[10px] border-0 ${
@@ -265,7 +274,8 @@ export function HistoryView() {
                             </div>
                           </td>
                         </motion.tr>
-                      ))}
+                        )
+                      })}
                     </tbody>
                   </table>
                 </div>
@@ -347,15 +357,20 @@ export function HistoryView() {
                     className="mt-4 space-y-2 border-t border-border/50 pt-4"
                   >
                     <h3 className="text-sm font-medium">{format(selectedDay, 'MMMM d, yyyy')}</h3>
-                    {selectedDaySessions.map((s: Session) => (
+                    {selectedDaySessions.map((s: Session) => {
+                      let sessionMood: SessionMood | null = null
+                      try { const meta = JSON.parse(s.notes || '{}'); sessionMood = meta.mood || null } catch {}
+                      return (
                       <div key={s.id} className="flex justify-between items-center py-2 px-3 bg-background/30 rounded-lg">
                         <div className="flex items-center gap-2">
+                          {sessionMood && <span className="text-sm">{MOOD_CONFIG[sessionMood]?.emoji}</span>}
                           <span className="text-sm">{format(parseISO(s.created_at), 'h:mm a')}</span>
                           <Badge variant="outline" className="text-[10px] border-0 bg-primary/10 text-primary">I{s.intensity}</Badge>
                         </div>
                         <span className="text-sm font-medium">{formatDuration(s.duration)}</span>
                       </div>
-                    ))}
+                    )
+                    })}
                   </motion.div>
                 )}
 

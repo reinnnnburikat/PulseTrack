@@ -31,15 +31,22 @@ import {
   Lock,
   Star,
   Target,
+  Sparkles,
+  Sun,
+  Moon,
 } from 'lucide-react'
-import { BarChart, Bar, XAxis, YAxis, ResponsiveContainer, Tooltip, CartesianGrid } from 'recharts'
+import { BarChart, Bar, XAxis, YAxis, ResponsiveContainer, Tooltip, CartesianGrid, PieChart, Pie, Cell } from 'recharts'
 import { format, subDays, isToday, parseISO, isSameDay } from 'date-fns'
 import { useEffect, useState, useMemo, useCallback } from 'react'
 import { createClient } from '@/lib/supabase'
 import { playSound } from '@/lib/audio'
 import { notifyAchievement } from '@/lib/notifications'
 import { checkAndNotifyStreak } from '@/lib/notifications'
-import type { Session } from '@/lib/types'
+import { vibrateAchievement } from '@/lib/haptics'
+import { useChallengeStore } from '@/store/challenge-store'
+import type { ChallengeStats } from '@/lib/challenges'
+import type { Session, SessionMood } from '@/lib/types'
+import { MOOD_CONFIG } from '@/lib/types'
 import type { AchievementDef } from '@/store/auth-store'
 
 // ---- Achievement Detail Modal State ----
@@ -71,10 +78,11 @@ export function DashboardView() {
     }
   }, [settings.notificationsEnabled]) // Only re-run if notifications setting changes
 
-  // Play achievement sound when unlocked
+  // Play achievement sound + haptic when unlocked
   useEffect(() => {
     if (gam.newlyUnlocked && settings.soundEnabled) {
       playSound('achievement')
+      vibrateAchievement()
     }
     if (gam.newlyUnlocked && settings.notificationsEnabled) {
       const def = ACHIEVEMENT_DEFS.find(a => a.key === gam.newlyUnlocked)
@@ -177,6 +185,94 @@ export function DashboardView() {
   const totalMins = Math.floor((gam.totalTime % 3600) / 60)
   const unlockedAchievements = gam.achievements.filter(a => a.unlockedAt)
   const closeToLevelUp = xpToNext < 100
+
+  // ---- Challenge Store ----
+  const challenge = useChallengeStore()
+
+  // ---- Phase 3: Mood Analytics ----
+  const moodData = useMemo(() => {
+    const moodCounts: Record<string, number> = {}
+    for (const s of typedSessions) {
+      try {
+        const meta = JSON.parse(s.notes || '{}')
+        if (meta.mood) {
+          moodCounts[meta.mood] = (moodCounts[meta.mood] || 0) + 1
+        }
+      } catch { /* no mood data */ }
+    }
+    return Object.entries(moodCounts).map(([mood, count]) => ({
+      mood,
+      count,
+      emoji: MOOD_CONFIG[mood as SessionMood]?.emoji || '😊',
+      label: MOOD_CONFIG[mood as SessionMood]?.label || mood,
+      color: MOOD_CONFIG[mood as SessionMood]?.color || 'text-muted-foreground',
+    }))
+  }, [typedSessions])
+
+  // ---- Phase 3: Time-of-Day Analysis ----
+  const timeOfDayData = useMemo(() => {
+    const hourBuckets = Array.from({ length: 6 }, (_, i) => ({
+      label: i === 0 ? '12-4am' : i === 1 ? '4-8am' : i === 2 ? '8am-12pm' : i === 3 ? '12-4pm' : i === 4 ? '4-8pm' : '8pm-12am',
+      sessions: 0,
+      avgDuration: 0,
+      durations: [] as number[],
+    }))
+    for (const s of typedSessions) {
+      const hour = parseISO(s.created_at).getHours()
+      const bucket = hour < 4 ? 0 : hour < 8 ? 1 : hour < 12 ? 2 : hour < 16 ? 3 : hour < 20 ? 4 : 5
+      hourBuckets[bucket].sessions++
+      hourBuckets[bucket].durations.push(s.duration)
+    }
+    return hourBuckets.map(b => ({
+      ...b,
+      avgDuration: b.durations.length > 0 ? Math.round(b.durations.reduce((a, d) => a + d, 0) / b.durations.length / 60) : 0,
+    }))
+  }, [typedSessions])
+
+  // ---- Phase 3: Best Performing Hour ----
+  const bestHour = useMemo(() => {
+    const hourCounts: Record<number, number> = {}
+    for (const s of typedSessions) {
+      const h = parseISO(s.created_at).getHours()
+      hourCounts[h] = (hourCounts[h] || 0) + 1
+    }
+    let maxHour = 0
+    let maxCount = 0
+    for (const [h, count] of Object.entries(hourCounts)) {
+      if (count > maxCount) { maxHour = parseInt(h); maxCount = count }
+    }
+    if (maxCount === 0) return null
+    return { hour: maxHour, count: maxCount, label: maxHour === 0 ? '12am' : maxHour < 12 ? `${maxHour}am` : maxHour === 12 ? '12pm' : `${maxHour - 12}pm` }
+  }, [typedSessions])
+
+  // ---- Phase 3: Challenge Stats ----
+  const challengeStats = useMemo((): ChallengeStats => {
+    const todayStr = new Date().toISOString().split('T')[0]
+    const weekAgo = new Date(Date.now() - 7 * 86400000).toISOString()
+    const today = typedSessions.filter(s => format(parseISO(s.created_at), 'yyyy-MM-dd') === todayStr)
+    const week = typedSessions.filter(s => new Date(s.created_at) >= new Date(weekAgo))
+    return {
+      todaySessions: today.length,
+      todayDuration: Math.round(today.reduce((a, s) => a + s.duration, 0) / 60),
+      todayMaxIntensity: today.length > 0 ? Math.max(...today.map(s => s.intensity)) : 0,
+      weekSessions: week.length,
+      weekDuration: Math.round(week.reduce((a, s) => a + s.duration, 0) / 60),
+      weekMaxIntensity: week.length > 0 ? Math.max(...week.map(s => s.intensity)) : 0,
+      currentStreak: gam.streak,
+      focusModeSessionsToday: today.filter(s => {
+        try { return JSON.parse(s.notes || '{}').focusModeUsed } catch { return false }
+      }).length,
+    }
+  }, [typedSessions, gam.streak])
+
+  // Initialize challenges on mount
+  useEffect(() => {
+    if (user) {
+      challenge.initializeChallenges()
+      // Check challenge progress on mount
+      setTimeout(() => challenge.checkChallenges(challengeStats), 1000)
+    }
+  }, [user])
 
   // ---- Stats ----
   const stats = [
@@ -557,8 +653,98 @@ export function DashboardView() {
         </Card>
       </motion.div>
 
+      {/* Phase 3: Daily + Weekly Challenges */}
+      <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.23 }}>
+        <Card className="bg-card/60 border-border/50">
+          <CardHeader className="pb-2">
+            <CardTitle className="text-sm flex items-center gap-2">
+              <Sparkles className="w-4 h-4 text-amber-400" />
+              Challenges
+            </CardTitle>
+          </CardHeader>
+          <CardContent>
+            <div className="grid sm:grid-cols-2 gap-3">
+              {/* Daily Challenge */}
+              {challenge.dailyChallengeDef && (
+                <div className={`p-3 rounded-lg border transition-all ${challenge.state.dailyChallenge?.completed ? 'bg-emerald-500/10 border-emerald-500/30' : 'bg-primary/5 border-primary/20'}`}>
+                  <div className="flex items-center justify-between mb-2">
+                    <div className="flex items-center gap-2">
+                      <span className="text-lg">{challenge.dailyChallengeDef.icon}</span>
+                      <div>
+                        <p className="text-xs font-medium">{challenge.dailyChallengeDef.title}</p>
+                        <p className="text-[10px] text-muted-foreground">Daily · +{challenge.dailyChallengeDef.xpReward} XP</p>
+                      </div>
+                    </div>
+                    {challenge.state.dailyChallenge?.completed && (
+                      <Badge className="bg-emerald-500/20 text-emerald-300 border-0 text-[10px]">Done!</Badge>
+                    )}
+                  </div>
+                  <p className="text-[10px] text-muted-foreground mb-2">{challenge.dailyChallengeDef.description}</p>
+                  <div className="space-y-1">
+                    <div className="flex justify-between text-[9px] text-muted-foreground">
+                      <span>{(() => {
+                        const p = challenge.dailyChallengeDef.getProgress(challengeStats)
+                        const unit = challenge.dailyChallengeDef.category === 'duration' ? 'min' : challenge.dailyChallengeDef.category === 'intensity' ? '' : ''
+                        return `${p.current}${unit} / ${p.target}${unit}`
+                      })()}</span>
+                      <span>{Math.min(100, Math.round((() => {
+                        const p = challenge.dailyChallengeDef.getProgress(challengeStats)
+                        return (p.current / p.target) * 100
+                      })()))}%</span>
+                    </div>
+                    <Progress value={Math.min(100, (() => {
+                      const p = challenge.dailyChallengeDef.getProgress(challengeStats)
+                      return (p.current / p.target) * 100
+                    })())} className="h-1.5 bg-secondary [&>[data-slot=progress-indicator]]:bg-primary" />
+                  </div>
+                </div>
+              )}
+
+              {/* Weekly Challenge */}
+              {challenge.weeklyChallengeDef && (
+                <div className={`p-3 rounded-lg border transition-all ${challenge.state.weeklyChallenge?.completed ? 'bg-emerald-500/10 border-emerald-500/30' : 'bg-violet-500/5 border-violet-500/20'}`}>
+                  <div className="flex items-center justify-between mb-2">
+                    <div className="flex items-center gap-2">
+                      <span className="text-lg">{challenge.weeklyChallengeDef.icon}</span>
+                      <div>
+                        <p className="text-xs font-medium">{challenge.weeklyChallengeDef.title}</p>
+                        <p className="text-[10px] text-muted-foreground">Weekly · +{challenge.weeklyChallengeDef.xpReward} XP</p>
+                      </div>
+                    </div>
+                    {challenge.state.weeklyChallenge?.completed && (
+                      <Badge className="bg-emerald-500/20 text-emerald-300 border-0 text-[10px]">Done!</Badge>
+                    )}
+                  </div>
+                  <p className="text-[10px] text-muted-foreground mb-2">{challenge.weeklyChallengeDef.description}</p>
+                  <div className="space-y-1">
+                    <div className="flex justify-between text-[9px] text-muted-foreground">
+                      <span>{(() => {
+                        const p = challenge.weeklyChallengeDef.getProgress(challengeStats)
+                        const unit = challenge.weeklyChallengeDef.category === 'duration' ? 'min' : ''
+                        return `${p.current}${unit} / ${p.target}${unit}`
+                      })()}</span>
+                      <span>{Math.min(100, Math.round((() => {
+                        const p = challenge.weeklyChallengeDef.getProgress(challengeStats)
+                        return (p.current / p.target) * 100
+                      })()))}%</span>
+                    </div>
+                    <Progress value={Math.min(100, (() => {
+                      const p = challenge.weeklyChallengeDef.getProgress(challengeStats)
+                      return (p.current / p.target) * 100
+                    })())} className="h-1.5 bg-secondary [&>[data-slot=progress-indicator]]:bg-violet-400" />
+                  </div>
+                </div>
+              )}
+            </div>
+            {challenge.state.challengeHistory.length > 0 && (
+              <p className="text-[9px] text-muted-foreground mt-2">{challenge.state.challengeHistory.length} challenge{challenge.state.challengeHistory.length !== 1 ? 's' : ''} completed total</p>
+            )}
+          </CardContent>
+        </Card>
+      </motion.div>
+
       {/* Charts */}
-      <div className="grid lg:grid-cols-2 gap-4">
+      <div className="grid lg:grid-cols-3 gap-4">
         <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.25 }}>
           <Card className="bg-card/60 border-border/50">
             <CardHeader className="pb-2">
@@ -573,9 +759,7 @@ export function DashboardView() {
                   <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.05)" />
                   <XAxis dataKey="day" tick={{ fill: 'rgba(255,255,255,0.4)', fontSize: 11 }} axisLine={false} />
                   <YAxis tick={{ fill: 'rgba(255,255,255,0.4)', fontSize: 11 }} axisLine={false} />
-                  <Tooltip
-                    contentStyle={{ background: 'rgba(20,20,30,0.95)', border: '1px solid rgba(255,255,255,0.1)', borderRadius: '8px', fontSize: '12px' }}
-                  />
+                  <Tooltip contentStyle={{ background: 'rgba(20,20,30,0.95)', border: '1px solid rgba(255,255,255,0.1)', borderRadius: '8px', fontSize: '12px' }} />
                   <Bar dataKey="sessions" fill="oklch(0.72 0.18 320)" radius={[4, 4, 0, 0]} />
                 </BarChart>
               </ResponsiveContainer>
@@ -588,7 +772,7 @@ export function DashboardView() {
             <CardHeader className="pb-2">
               <CardTitle className="text-sm flex items-center gap-2">
                 <Clock className="w-4 h-4 text-emerald-400" />
-                Duration Trend (14 days)
+                Duration Trend (14d)
               </CardTitle>
             </CardHeader>
             <CardContent className="h-48">
@@ -597,17 +781,92 @@ export function DashboardView() {
                   <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.05)" />
                   <XAxis dataKey="day" tick={{ fill: 'rgba(255,255,255,0.4)', fontSize: 9 }} axisLine={false} />
                   <YAxis tick={{ fill: 'rgba(255,255,255,0.4)', fontSize: 11 }} axisLine={false} />
-                  <Tooltip
-                    contentStyle={{ background: 'rgba(20,20,30,0.95)', border: '1px solid rgba(255,255,255,0.1)', borderRadius: '8px', fontSize: '12px' }}
-                    formatter={(value: number) => [`${value} min`, 'Avg Duration']}
-                  />
+                  <Tooltip contentStyle={{ background: 'rgba(20,20,30,0.95)', border: '1px solid rgba(255,255,255,0.1)', borderRadius: '8px', fontSize: '12px' }} formatter={(value: number) => [`${value} min`, 'Avg Duration']} />
                   <Bar dataKey="avgDuration" fill="oklch(0.65 0.15 160)" radius={[4, 4, 0, 0]} />
                 </BarChart>
               </ResponsiveContainer>
             </CardContent>
           </Card>
         </motion.div>
+
+        {/* Phase 3: Mood Distribution */}
+        <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.32 }}>
+          <Card className="bg-card/60 border-border/50">
+            <CardHeader className="pb-2">
+              <CardTitle className="text-sm flex items-center gap-2">
+                <Flame className="w-4 h-4 text-pink-400" />
+                Mood Distribution
+              </CardTitle>
+            </CardHeader>
+            <CardContent className="h-48">
+              {moodData.length === 0 ? (
+                <div className="h-full flex items-center justify-center">
+                  <p className="text-xs text-muted-foreground text-center">Rate your mood after sessions to see distribution here</p>
+                </div>
+              ) : (
+                <ResponsiveContainer width="100%" height="100%">
+                  <PieChart>
+                    <Pie data={moodData} dataKey="count" nameKey="mood" cx="50%" cy="50%" innerRadius={35} outerRadius={65} paddingAngle={2}
+                      stroke="none">
+                      {moodData.map((_, i) => (
+                        <Cell key={i} fill={['oklch(0.72 0.18 320)', 'oklch(0.65 0.15 160)', 'oklch(0.70 0.15 280)', 'oklch(0.65 0.22 25)', 'oklch(0.55 0.05 260)', 'oklch(0.75 0.15 350)', 'oklch(0.50 0.02 260)'][i % 7]} />
+                      ))}
+                    </Pie>
+                    <Tooltip contentStyle={{ background: 'rgba(20,20,30,0.95)', border: '1px solid rgba(255,255,255,0.1)', borderRadius: '8px', fontSize: '12px' }}
+                      formatter={(value: number, name: string) => {
+                        const m = moodData.find(d => d.mood === name)
+                        return [`${value} session${value !== 1 ? 's' : ''}`, m?.label || name]
+                      }} />
+                  </PieChart>
+                </ResponsiveContainer>
+              )}
+              {/* Mood legend */}
+              {moodData.length > 0 && (
+                <div className="flex flex-wrap gap-2 mt-1">
+                  {moodData.slice(0, 5).map(m => (
+                    <span key={m.mood} className="text-[9px] text-muted-foreground flex items-center gap-1">
+                      {m.emoji} {m.count}
+                    </span>
+                  ))}
+                </div>
+              )}
+            </CardContent>
+          </Card>
+        </motion.div>
       </div>
+
+      {/* Phase 3: Time-of-Day Analysis + Best Hour */}
+      {typedSessions.length > 0 && (
+        <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.34 }}>
+          <Card className="bg-card/60 border-border/50">
+            <CardHeader className="pb-2">
+              <CardTitle className="text-sm flex items-center gap-2">
+                <Sun className="w-4 h-4 text-amber-400" />
+                Time-of-Day Patterns
+              </CardTitle>
+            </CardHeader>
+            <CardContent>
+              <div className="h-40">
+                <ResponsiveContainer width="100%" height="100%">
+                  <BarChart data={timeOfDayData}>
+                    <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.05)" />
+                    <XAxis dataKey="label" tick={{ fill: 'rgba(255,255,255,0.4)', fontSize: 10 }} axisLine={false} />
+                    <YAxis tick={{ fill: 'rgba(255,255,255,0.4)', fontSize: 11 }} axisLine={false} />
+                    <Tooltip contentStyle={{ background: 'rgba(20,20,30,0.95)', border: '1px solid rgba(255,255,255,0.1)', borderRadius: '8px', fontSize: '12px' }} />
+                    <Bar dataKey="sessions" fill="oklch(0.70 0.15 55)" radius={[4, 4, 0, 0]} />
+                  </BarChart>
+                </ResponsiveContainer>
+              </div>
+              {bestHour && (
+                <div className="flex items-center justify-center gap-2 mt-3 text-xs text-muted-foreground">
+                  <Moon className="w-3 h-3" />
+                  <span>Peak activity: <span className="font-medium text-foreground">{bestHour.label}</span> ({bestHour.count} session{bestHour.count !== 1 ? 's' : ''})</span>
+                </div>
+              )}
+            </CardContent>
+          </Card>
+        </motion.div>
+      )}
 
       {/* Personal Bests */}
       <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.33 }}>
@@ -701,9 +960,13 @@ export function DashboardView() {
               </p>
             ) : (
               <div className="space-y-2 max-h-64 overflow-y-auto">
-                {recentSessions.map((s: Session) => (
+                {recentSessions.map((s: Session) => {
+                  let sessionMood: SessionMood | null = null
+                  try { const meta = JSON.parse(s.notes || '{}'); sessionMood = meta.mood || null } catch {}
+                  return (
                   <div key={s.id} className="flex items-center justify-between py-2 px-3 rounded-lg bg-background/30">
                     <div className="flex items-center gap-3">
+                      {sessionMood && <span className="text-sm">{MOOD_CONFIG[sessionMood]?.emoji}</span>}
                       <span className="text-sm text-muted-foreground">
                         {format(parseISO(s.created_at), 'MMM d, h:mm a')}
                       </span>
@@ -720,7 +983,8 @@ export function DashboardView() {
                       </Badge>
                     </div>
                   </div>
-                ))}
+                  )
+                })}
               </div>
             )}
           </CardContent>

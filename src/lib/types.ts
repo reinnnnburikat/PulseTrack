@@ -189,3 +189,23 @@ export interface OfflineAchievement {
   unlocked_at: string
   synced: boolean
 }
+
+// ---- Mood & Tags (Phase 3) ----
+
+export type SessionMood = 'energized' | 'calm' | 'focused' | 'intense' | 'tired' | 'happy' | 'neutral'
+
+export const MOOD_CONFIG: Record<SessionMood, { emoji: string; label: string; color: string }> = {
+  energized: { emoji: '⚡', label: 'Energized', color: 'text-yellow-400' },
+  calm: { emoji: '😌', label: 'Calm', color: 'text-sky-400' },
+  focused: { emoji: '🎯', label: 'Focused', color: 'text-violet-400' },
+  intense: { emoji: '🔥', label: 'Intense', color: 'text-red-400' },
+  tired: { emoji: '😴', label: 'Tired', color: 'text-gray-400' },
+  happy: { emoji: '😊', label: 'Happy', color: 'text-pink-400' },
+  neutral: { emoji: '😐', label: 'Neutral', color: 'text-muted-foreground' },
+}
+
+export interface SessionMetadata {
+  mood: SessionMood | null
+  tags: string[]
+  focusModeUsed: boolean
+}
