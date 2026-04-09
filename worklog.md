@@ -1,3 +1,4 @@
+WORKLOG_EOF
 ---
 Task ID: 1
 Agent: Main Developer
