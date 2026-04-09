@@ -1,6 +1,7 @@
 'use client'
 
 import { useAuthStore } from '@/store/auth-store'
+import { LoginForm } from '@/components/auth/login-form'
 import { motion, AnimatePresence } from 'framer-motion'
 import {
   LayoutDashboard,
@@ -44,7 +45,6 @@ export function AppShell({ children }: { children: React.ReactNode }) {
 
   // Unauthenticated — show login
   if (!user) {
-    const { LoginForm } = require('@/components/auth/login-form')
     return <LoginForm />
   }
 

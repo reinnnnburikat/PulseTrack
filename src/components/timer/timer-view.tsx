@@ -1,8 +1,9 @@
 'use client'
 
-import { useEffect, useCallback } from 'react'
+import { useEffect, useState, useRef } from 'react'
 import { useQuery } from '@tanstack/react-query'
-import { useTimerStore, useAuthStore, useSettingsStore } from '@/store/timer-store'
+import { useTimerStore } from '@/store/timer-store'
+import { useAuthStore, useSettingsStore } from '@/store/auth-store'
 import { createClient } from '@/lib/supabase'
 import { motion, AnimatePresence } from 'framer-motion'
 import { Card, CardContent } from '@/components/ui/card'
@@ -25,7 +26,7 @@ import {
   DialogDescription,
   DialogFooter,
 } from '@/components/ui/dialog'
-import { Play, Pause, RotateCcw, SkipForward, Flame, Zap, Trophy, AlertTriangle } from 'lucide-react'
+import { Play, Pause, RotateCcw, SkipForward, Zap, Trophy, AlertTriangle } from 'lucide-react'
 import type { SessionProfile, Tone } from '@/lib/types'
 
 export function TimerView() {
@@ -382,5 +383,4 @@ export function TimerView() {
   )
 }
 
-// Need to import useState and useRef
-import { useState, useRef } from 'react'
+
