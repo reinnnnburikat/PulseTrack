@@ -8,6 +8,8 @@ import { TimerView } from '@/components/timer/timer-view'
 import { HistoryView } from '@/components/sessions/history-view'
 import { ProfilesView } from '@/components/profiles/profiles-view'
 import { QuizView } from '@/components/quiz/quiz-view'
+import { DiscoverView } from '@/components/discover/discover-view'
+import { MatchesView } from '@/components/matches/matches-view'
 import { SettingsView } from '@/components/profiles/settings-view'
 
 export default function Home() {
@@ -29,6 +31,10 @@ export default function Home() {
         return <ProfilesView />
       case 'quiz':
         return <QuizView />
+      case 'discover':
+        return <DiscoverView />
+      case 'matches':
+        return <MatchesView />
       case 'settings':
         return <SettingsView />
       default:

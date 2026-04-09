@@ -38,7 +38,7 @@ import {
 import { BarChart, Bar, XAxis, YAxis, ResponsiveContainer, Tooltip, CartesianGrid, PieChart, Pie, Cell } from 'recharts'
 import { format, subDays, isToday, parseISO, isSameDay } from 'date-fns'
 import { useEffect, useState, useMemo, useCallback } from 'react'
-import { createClient } from '@/lib/supabase'
+import { apiFetch } from '@/lib/supabase'
 import { playSound } from '@/lib/audio'
 import { notifyAchievement } from '@/lib/notifications'
 import { checkAndNotifyStreak } from '@/lib/notifications'
@@ -94,13 +94,8 @@ export function DashboardView() {
     queryKey: ['dashboard-sessions'],
     queryFn: async () => {
       if (!user) return []
-      const supabase = createClient()
-      const token = (await supabase.auth.getSession()).data.session?.access_token
-      const res = await fetch('/api/sessions?limit=200', {
-        headers: { Authorization: `Bearer ${token}` },
-      })
-      const json = await res.json()
-      return json.data || []
+      const res = await apiFetch('/api/sessions?limit=200')
+      return res.data || []
     },
     enabled: !!user,
   })

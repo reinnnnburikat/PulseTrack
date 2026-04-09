@@ -18,6 +18,8 @@ import {
   Loader2,
   CheckCircle2,
   Circle,
+  Users,
+  Heart,
 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
@@ -35,6 +37,8 @@ const navItems = [
   { key: 'history' as const, label: 'History', icon: History },
   { key: 'profiles' as const, label: 'Profiles', icon: BookmarkPlus },
   { key: 'quiz' as const, label: 'Quiz', icon: Brain },
+  { key: 'discover' as const, label: 'Discover', icon: Users },
+  { key: 'matches' as const, label: 'Matches', icon: Heart },
   { key: 'settings' as const, label: 'Settings', icon: Settings },
 ]
 

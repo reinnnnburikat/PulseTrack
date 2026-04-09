@@ -3,7 +3,7 @@
 import { useState, useEffect } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { useAuthStore } from '@/store/auth-store'
-import { createClient } from '@/lib/supabase'
+import { apiFetch } from '@/lib/supabase'
 import { motion, AnimatePresence } from 'framer-motion'
 import { Card, CardContent } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
@@ -24,6 +24,14 @@ import {
   Compass,
   Sparkles,
 } from 'lucide-react'
+import {
+  RadarChart,
+  PolarGrid,
+  PolarAngleAxis,
+  PolarRadiusAxis,
+  Radar,
+  ResponsiveContainer,
+} from 'recharts'
 
 interface QuizQuestion {
   id: string
@@ -162,13 +170,10 @@ export function QuizView() {
   const saveResults = async () => {
     if (!user) return
     const results = getResults()
-    const supabase = createClient()
-    const token = (await supabase.auth.getSession()).data.session?.access_token
 
     try {
-      await fetch('/api/quiz', {
+      await apiFetch('/api/quiz', {
         method: 'POST',
-        headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
         body: JSON.stringify({
           scores,
           dominant_trait: results.dominant_trait,
@@ -364,6 +369,45 @@ export function QuizView() {
                 </div>
               </CardContent>
             </Card>
+
+            {/* Radar Chart */}
+            {sortedTraits.length >= 3 && (
+              <Card className="bg-card/60 border-border/50">
+                <CardContent className="p-5">
+                  <p className="text-xs text-muted-foreground mb-3 flex items-center gap-1.5">
+                    <Sparkles className="w-3 h-3 text-primary" /> Profile Radar
+                  </p>
+                  <div className="h-56">
+                    <ResponsiveContainer width="100%" height="100%">
+                      <RadarChart data={sortedTraits.map(([trait, score]) => ({
+                        trait: trait.charAt(0).toUpperCase() + trait.slice(1),
+                        score,
+                      }))}>
+                        <PolarGrid stroke="rgba(255,255,255,0.08)" />
+                        <PolarAngleAxis
+                          dataKey="trait"
+                          tick={{ fill: 'rgba(255,255,255,0.5)', fontSize: 10 }}
+                        />
+                        <PolarRadiusAxis
+                          angle={30}
+                          domain={[0, 'auto']}
+                          tick={false}
+                          axisLine={false}
+                        />
+                        <Radar
+                          name="Score"
+                          dataKey="score"
+                          stroke="oklch(0.72 0.18 320)"
+                          fill="oklch(0.72 0.18 320)"
+                          fillOpacity={0.25}
+                          strokeWidth={2}
+                        />
+                      </RadarChart>
+                    </ResponsiveContainer>
+                  </div>
+                </CardContent>
+              </Card>
+            )}
 
             {/* Actions */}
             <div className="flex gap-2 pt-2">

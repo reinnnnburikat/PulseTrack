@@ -3,7 +3,7 @@
 import { useState } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { useAuthStore } from '@/store/auth-store'
-import { createClient } from '@/lib/supabase'
+import { apiFetch } from '@/lib/supabase'
 import { motion, AnimatePresence } from 'framer-motion'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
@@ -61,13 +61,8 @@ export function HistoryView() {
     queryKey: ['sessions'],
     queryFn: async () => {
       if (!user) return []
-      const supabase = createClient()
-      const token = (await supabase.auth.getSession()).data.session?.access_token
-      const res = await fetch('/api/sessions?limit=500', {
-        headers: { Authorization: `Bearer ${token}` },
-      })
-      const json = await res.json()
-      return json.data || []
+      const res = await apiFetch('/api/sessions?limit=500')
+      return res.data || []
     },
     enabled: !!user,
   })
@@ -75,38 +70,21 @@ export function HistoryView() {
   // Mutations
   const deleteMutation = useMutation({
     mutationFn: async (id: string) => {
-      const supabase = createClient()
-      const token = (await supabase.auth.getSession()).data.session?.access_token
-      await fetch(`/api/sessions?id=${id}`, {
-        method: 'DELETE',
-        headers: { Authorization: `Bearer ${token}` },
-      })
+      await fetch(`/api/sessions?id=${id}`, { method: 'DELETE', credentials: 'include' })
     },
     onSuccess: () => queryClient.invalidateQueries({ queryKey: ['sessions'] }),
   })
 
   const updateMutation = useMutation({
     mutationFn: async (s: Session) => {
-      const supabase = createClient()
-      const token = (await supabase.auth.getSession()).data.session?.access_token
-      await fetch('/api/sessions', {
-        method: 'PUT',
-        headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
-        body: JSON.stringify(s),
-      })
+      await apiFetch('/api/sessions', { method: 'PUT', body: JSON.stringify(s) })
     },
     onSuccess: () => { queryClient.invalidateQueries({ queryKey: ['sessions'] }); setEditSession(null) },
   })
 
   const addMutation = useMutation({
     mutationFn: async (s: Partial<Session>) => {
-      const supabase = createClient()
-      const token = (await supabase.auth.getSession()).data.session?.access_token
-      await fetch('/api/sessions', {
-        method: 'POST',
-        headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
-        body: JSON.stringify(s),
-      })
+      await apiFetch('/api/sessions', { method: 'POST', body: JSON.stringify(s) })
     },
     onSuccess: () => { queryClient.invalidateQueries({ queryKey: ['sessions'] }); setShowAddDialog(false); setFormState({ duration: '', intensity: '3', notes: '', profile: '' }) },
   })

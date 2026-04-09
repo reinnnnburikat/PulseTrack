@@ -1,25 +1,32 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { createClient } from '@/lib/supabase'
+import { db } from '@/lib/db'
+import { getUserId } from '@/lib/auth'
 
 export async function GET(req: NextRequest) {
   try {
-    const supabase = createClient()
-    const token = req.headers.get('Authorization')?.replace('Bearer ', '')
-    if (!token) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+    const userId = await getUserId(req)
+    if (!userId) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
 
-    const { data: { user } } = await supabase.auth.getUser(token)
-    if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+    let settings = await db.userSettings.findUnique({ where: { userId } })
 
-    const { data, error } = await supabase
-      .from('user_settings')
-      .select('*')
-      .eq('user_id', user.id)
-      .single()
-
-    if (error && error.code !== 'PGRST116') {
-      return NextResponse.json({ error: error.message }, { status: 500 })
+    if (!settings) {
+      settings = await db.userSettings.create({ data: { userId } })
     }
-    return NextResponse.json({ data: data || {} })
+
+    return NextResponse.json({
+      data: {
+        user_id: settings.userId,
+        active_duration: settings.activeDuration,
+        rest_duration: settings.restDuration,
+        intensity_mode: settings.intensityMode,
+        tone: settings.tone,
+        lock_in_mode: settings.lockInMode,
+        cycles: settings.cycles,
+        infinite_cycles: settings.infiniteCycles,
+        sound_enabled: settings.soundEnabled,
+        notifications_enabled: settings.notificationsEnabled,
+      },
+    })
   } catch (e: any) {
     return NextResponse.json({ error: e.message }, { status: 500 })
   }
@@ -27,31 +34,49 @@ export async function GET(req: NextRequest) {
 
 export async function PUT(req: NextRequest) {
   try {
-    const supabase = createClient()
-    const token = req.headers.get('Authorization')?.replace('Bearer ', '')
-    if (!token) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
-
-    const { data: { user } } = await supabase.auth.getUser(token)
-    if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+    const userId = await getUserId(req)
+    if (!userId) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
 
     const body = await req.json()
-    const { data, error } = await supabase
-      .from('user_settings')
-      .upsert({
-        user_id: user.id,
-        active_duration: body.active_duration ?? 25,
-        rest_duration: body.rest_duration ?? 5,
-        intensity_mode: body.intensity_mode ?? false,
+    const settings = await db.userSettings.upsert({
+      where: { userId },
+      update: {
+        activeDuration: body.active_duration ?? 25,
+        restDuration: body.rest_duration ?? 5,
+        intensityMode: body.intensity_mode ?? false,
         tone: body.tone ?? 'teasing',
-        lock_in_mode: body.lock_in_mode ?? false,
+        lockInMode: body.lock_in_mode ?? false,
         cycles: body.cycles ?? 4,
-        infinite_cycles: body.infinite_cycles ?? false,
-      }, { onConflict: 'user_id' })
-      .select()
-      .single()
+        infiniteCycles: body.infinite_cycles ?? false,
+        soundEnabled: body.sound_enabled ?? true,
+        notificationsEnabled: body.notifications_enabled ?? true,
+      },
+      create: {
+        userId,
+        activeDuration: body.active_duration ?? 25,
+        restDuration: body.rest_duration ?? 5,
+        intensityMode: body.intensity_mode ?? false,
+        tone: body.tone ?? 'teasing',
+        lockInMode: body.lock_in_mode ?? false,
+        cycles: body.cycles ?? 4,
+        infiniteCycles: body.infinite_cycles ?? false,
+        soundEnabled: body.sound_enabled ?? true,
+        notificationsEnabled: body.notifications_enabled ?? true,
+      },
+    })
 
-    if (error) return NextResponse.json({ error: error.message }, { status: 500 })
-    return NextResponse.json({ data })
+    return NextResponse.json({
+      data: {
+        user_id: settings.userId,
+        active_duration: settings.activeDuration,
+        rest_duration: settings.restDuration,
+        intensity_mode: settings.intensityMode,
+        tone: settings.tone,
+        lock_in_mode: settings.lockInMode,
+        cycles: settings.cycles,
+        infinite_cycles: settings.infiniteCycles,
+      },
+    })
   } catch (e: any) {
     return NextResponse.json({ error: e.message }, { status: 500 })
   }

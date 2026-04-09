@@ -1,23 +1,27 @@
 import { create } from 'zustand'
-import type { AppView, UserSettings, GamificationState, UserProfile, Achievement } from '@/lib/types'
-import { createClient } from '@/lib/supabase'
-import type { User, Session } from '@supabase/supabase-js'
+import type { AppView, UserSettings, GamificationState, Achievement } from '@/lib/types'
+import { apiFetch } from '@/lib/supabase'
+
+interface UserInfo {
+  id: string
+  email: string
+  displayName?: string | null
+  avatarUrl?: string | null
+}
 
 interface AuthState {
-  user: User | null
-  session: Session | null
-  profile: UserProfile | null
+  user: UserInfo | null
+  profile: { id: string; email: string; display_name: string | null; avatar_url: string | null; created_at: string } | null
   loading: boolean
   view: AppView
   setView: (view: AppView) => void
-  setProfile: (profile: UserProfile | null) => void
+  setProfile: (profile: any) => void
   initialize: () => Promise<void>
   signOut: () => Promise<void>
 }
 
 export const useAuthStore = create<AuthState>((set, get) => ({
   user: null,
-  session: null,
   profile: null,
   loading: true,
   view: 'dashboard',
@@ -27,62 +31,44 @@ export const useAuthStore = create<AuthState>((set, get) => ({
 
   initialize: async () => {
     try {
-      const supabase = createClient()
-      const { data: { session } } = await supabase.auth.getSession()
-
-      if (session?.user) {
-        set({ user: session.user, session, loading: false })
-        // Fetch or create profile
-        const { data: profile } = await supabase
-          .from('user_profiles')
-          .select('*')
-          .eq('user_id', session.user.id)
-          .single()
-
-        if (profile) {
-          set({ profile })
-        } else {
-          const { data: newProfile } = await supabase
-            .from('user_profiles')
-            .insert({
-              user_id: session.user.id,
-              email: session.user.email || '',
-              display_name: session.user.user_metadata?.full_name || null,
-              avatar_url: session.user.user_metadata?.avatar_url || null,
-            })
-            .select()
-            .single()
-          set({ profile: newProfile })
-        }
+      const res = await apiFetch('/api/auth/me')
+      if (res.user) {
+        const user = res.user as UserInfo
+        set({
+          user,
+          profile: {
+            id: user.id,
+            email: user.email,
+            display_name: user.displayName || null,
+            avatar_url: user.avatarUrl || null,
+            created_at: new Date().toISOString(),
+          },
+          loading: false,
+        })
 
         // Fetch settings
-        const { data: settings } = await supabase
-          .from('user_settings')
-          .select('*')
-          .eq('user_id', session.user.id)
-          .single()
-        if (settings) {
-          get().initSettings(settings as UserSettings)
-        }
+        try {
+          const settingsRes = await apiFetch('/api/settings')
+          if (settingsRes.data) {
+            get().initSettings(settingsRes.data)
+          }
+        } catch {}
 
         // Fetch gamification
-        const { data: gam } = await supabase
-          .from('gamification')
-          .select('*')
-          .eq('user_id', session.user.id)
-          .single()
-        if (gam) {
-          useGamificationStore.getState().loadGamification(gam as any)
-        }
+        try {
+          const gamRes = await apiFetch('/api/gamification')
+          if (gamRes.data) {
+            useGamificationStore.getState().loadGamification(gamRes.data)
+          }
+        } catch {}
 
         // Fetch achievements
-        const { data: achs } = await supabase
-          .from('achievements')
-          .select('*')
-          .eq('user_id', session.user.id)
-        if (achs) {
-          useGamificationStore.getState().loadAchievements(achs as any[])
-        }
+        try {
+          const achRes = await apiFetch('/api/achievements')
+          if (achRes.data) {
+            useGamificationStore.getState().loadAchievements(achRes.data)
+          }
+        } catch {}
       } else {
         set({ loading: false })
       }
@@ -92,25 +78,17 @@ export const useAuthStore = create<AuthState>((set, get) => ({
         const { useChallengeStore } = await import('@/store/challenge-store')
         useChallengeStore.getState().initializeChallenges()
       } catch {}
-
-      // Listen for auth changes
-      supabase.auth.onAuthStateChange(async (event, session) => {
-        if (event === 'SIGNED_IN' && session?.user) {
-          set({ user: session.user, session })
-        } else if (event === 'SIGNED_OUT') {
-          set({ user: null, session: null, profile: null })
-        }
-      })
-    } catch (e) {
-      console.error('Auth init error:', e)
+    } catch {
+      // Not authenticated or network error
       set({ loading: false })
     }
   },
 
   signOut: async () => {
-    const supabase = createClient()
-    await supabase.auth.signOut()
-    set({ user: null, session: null, profile: null, view: 'dashboard' })
+    try {
+      await apiFetch('/api/auth/signout', { method: 'POST' })
+    } catch {}
+    set({ user: null, profile: null, view: 'dashboard' })
   },
 }))
 
@@ -150,28 +128,30 @@ export const useSettingsStore = create<SettingsState>((set, get) => ({
     lockInMode: s.lock_in_mode ?? false,
     cycles: s.cycles ?? 4,
     infiniteCycles: s.infinite_cycles ?? false,
+    soundEnabled: s.sound_enabled ?? true,
+    notificationsEnabled: s.notifications_enabled ?? true,
   }),
 
   updateSettings: (s) => set(s),
 
   saveSettings: async () => {
-    const { user } = useAuthStore.getState()
-    if (!user) return
     const state = get()
-    const supabase = createClient()
-
-    await supabase
-      .from('user_settings')
-      .upsert({
-        user_id: user.id,
-        active_duration: state.activeDuration,
-        rest_duration: state.restDuration,
-        intensity_mode: state.intensityMode,
-        tone: state.tone,
-        lock_in_mode: state.lockInMode,
-        cycles: state.cycles,
-        infinite_cycles: state.infiniteCycles,
-      }, { onConflict: 'user_id' })
+    try {
+      await apiFetch('/api/settings', {
+        method: 'PUT',
+        body: JSON.stringify({
+          active_duration: state.activeDuration,
+          rest_duration: state.restDuration,
+          intensity_mode: state.intensityMode,
+          tone: state.tone,
+          lock_in_mode: state.lockInMode,
+          cycles: state.cycles,
+          infinite_cycles: state.infiniteCycles,
+          sound_enabled: state.soundEnabled,
+          notifications_enabled: state.notificationsEnabled,
+        }),
+      })
+    } catch {}
   },
 }))
 
@@ -222,7 +202,7 @@ interface GamStore {
   lastSessionDate: string | null
   achievements: Achievement[]
   newlyUnlocked: string | null
-  loadGamification: (g: Partial<GamificationState>) => void
+  loadGamification: (g: Record<string, any>) => void
   loadAchievements: (achs: any[]) => void
   incrementSessions: (duration: number, context?: Record<string, number>) => void
   resetStreak: () => void
@@ -248,7 +228,7 @@ export const useGamificationStore = create<GamStore>((set, get) => ({
     totalTime: g.total_time ?? 0,
     level: g.level ?? 1,
     xp: g.xp ?? 0,
-    lastSessionDate: (g as any).last_session_date ?? null,
+    lastSessionDate: g.last_session_date ?? null,
   }),
 
   loadAchievements: (achs) => set({
@@ -266,7 +246,6 @@ export const useGamificationStore = create<GamStore>((set, get) => ({
     const state = get()
     const today = new Date().toISOString().split('T')[0]
 
-    // Check if streak should continue or reset
     let newStreak = 1
     if (state.lastSessionDate) {
       const lastDate = new Date(state.lastSessionDate)
@@ -275,12 +254,11 @@ export const useGamificationStore = create<GamStore>((set, get) => ({
       if (diffDays === 1) {
         newStreak = state.streak + 1
       } else if (diffDays === 0) {
-        newStreak = state.streak // Same day, don't increment
+        newStreak = state.streak
       }
-      // diffDays > 1 means streak broken — new streak starts at 1
     }
 
-    const xpGain = Math.round(duration / 60 * 10) + (newStreak > 3 ? 20 : 0) // Bonus XP for streaks
+    const xpGain = Math.round(duration / 60 * 10) + (newStreak > 3 ? 20 : 0)
     const newXP = state.xp + xpGain
     const newLevel = Math.floor(newXP / 500) + 1
 
@@ -296,7 +274,6 @@ export const useGamificationStore = create<GamStore>((set, get) => ({
 
     get().saveGamification()
 
-    // Check achievements after a short delay
     setTimeout(() => {
       get().checkAchievements(context)
     }, 500)
@@ -308,29 +285,24 @@ export const useGamificationStore = create<GamStore>((set, get) => ({
   },
 
   saveGamification: async () => {
-    const { user } = useAuthStore.getState()
-    if (!user) return
     const state = get()
-    const supabase = createClient()
-
-    await supabase
-      .from('gamification')
-      .upsert({
-        user_id: user.id,
-        streak: state.streak,
-        longest_streak: state.longestStreak,
-        total_sessions: state.totalSessions,
-        total_time: state.totalTime,
-        level: state.level,
-        xp: state.xp,
-        last_session_date: state.lastSessionDate,
-      }, { onConflict: 'user_id' })
+    try {
+      await apiFetch('/api/gamification', {
+        method: 'PUT',
+        body: JSON.stringify({
+          streak: state.streak,
+          longest_streak: state.longestStreak,
+          total_sessions: state.totalSessions,
+          total_time: state.totalTime,
+          level: state.level,
+          xp: state.xp,
+          last_session_date: state.lastSessionDate,
+        }),
+      })
+    } catch {}
   },
 
   checkAchievements: async (context?: Record<string, number>) => {
-    const { user } = useAuthStore.getState()
-    if (!user) return []
-
     const state = get()
     const unlockedKeys = new Set(state.achievements.map(a => a.achievement_key))
     const newUnlocks: string[] = []
@@ -339,43 +311,39 @@ export const useGamificationStore = create<GamStore>((set, get) => ({
       if (unlockedKeys.has(def.key)) continue
       if (def.check(state, context)) {
         newUnlocks.push(def.key)
-        // Save to DB
         try {
-          const supabase = createClient()
-          await supabase.from('achievements').upsert({
-            user_id: user.id,
-            achievement_key: def.key,
-            name: def.name,
-            description: def.description,
-            icon: def.icon,
-            unlocked_at: new Date().toISOString(),
-          }, { onConflict: 'user_id,achievement_key' })
+          await apiFetch('/api/achievements', {
+            method: 'POST',
+            body: JSON.stringify({
+              achievement_key: def.key,
+              name: def.name,
+              description: def.description,
+              icon: def.icon,
+              unlocked_at: new Date().toISOString(),
+            }),
+          })
         } catch {}
       }
     }
 
     if (newUnlocks.length > 0) {
-      // Refresh achievements
-      const supabase = createClient()
-      const { data: achs } = await supabase
-        .from('achievements')
-        .select('*')
-        .eq('user_id', user.id)
-      if (achs) {
-        set({
-          achievements: achs.map((a: any) => ({
-            id: a.id,
-            achievement_key: a.achievement_key,
-            name: a.name,
-            description: a.description,
-            icon: a.icon,
-            unlockedAt: a.unlocked_at,
-          })),
-          newlyUnlocked: newUnlocks[0],
-        })
-        // Clear the new unlock notification after 5 seconds
-        setTimeout(() => set({ newlyUnlocked: null }), 5000)
-      }
+      try {
+        const achRes = await apiFetch('/api/achievements')
+        if (achRes.data) {
+          set({
+            achievements: achRes.data.map((a: any) => ({
+              id: a.id,
+              achievement_key: a.achievement_key,
+              name: a.name,
+              description: a.description,
+              icon: a.icon,
+              unlockedAt: a.unlocked_at,
+            })),
+            newlyUnlocked: newUnlocks[0],
+          })
+          setTimeout(() => set({ newlyUnlocked: null }), 5000)
+        }
+      } catch {}
     }
 
     return newUnlocks

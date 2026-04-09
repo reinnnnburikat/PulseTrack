@@ -5,7 +5,7 @@
 export type Tone = 'dominant' | 'hypnotic' | 'teasing'
 export type Phase = 'active' | 'rest'
 export type TimerStatus = 'idle' | 'running' | 'paused' | 'completed'
-export type AppView = 'dashboard' | 'session' | 'history' | 'profiles' | 'quiz' | 'settings'
+export type AppView = 'dashboard' | 'session' | 'history' | 'profiles' | 'quiz' | 'discover' | 'matches' | 'settings'
 
 // ---- Database row types ----
 

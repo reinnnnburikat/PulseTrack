@@ -3,7 +3,7 @@
 import { useState } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { useAuthStore, useSettingsStore } from '@/store/auth-store'
-import { createClient } from '@/lib/supabase'
+import { apiFetch } from '@/lib/supabase'
 import { motion } from 'framer-motion'
 import { Card, CardContent } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
@@ -128,24 +128,16 @@ export function ProfilesView() {
     queryKey: ['profiles'],
     queryFn: async () => {
       if (!user) return []
-      const supabase = createClient()
-      const token = (await supabase.auth.getSession()).data.session?.access_token
-      const res = await fetch('/api/profiles', {
-        headers: { Authorization: `Bearer ${token}` },
-      })
-      const json = await res.json()
-      return json.data || []
+      const res = await apiFetch('/api/profiles')
+      return res.data || []
     },
     enabled: !!user,
   })
 
   const createMutation = useMutation({
     mutationFn: async (f: ProfileForm) => {
-      const supabase = createClient()
-      const token = (await supabase.auth.getSession()).data.session?.access_token
-      await fetch('/api/profiles', {
+      await apiFetch('/api/profiles', {
         method: 'POST',
-        headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
         body: JSON.stringify({
           name: f.name,
           active_duration: parseInt(f.active_duration),
@@ -162,26 +154,14 @@ export function ProfilesView() {
 
   const updateMutation = useMutation({
     mutationFn: async ({ id, ...f }: SessionProfile & { id: string }) => {
-      const supabase = createClient()
-      const token = (await supabase.auth.getSession()).data.session?.access_token
-      await fetch('/api/profiles', {
-        method: 'PUT',
-        headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
-        body: JSON.stringify({ id, ...f }),
-      })
+      await apiFetch('/api/profiles', { method: 'PUT', body: JSON.stringify({ id, ...f }) })
     },
     onSuccess: () => { queryClient.invalidateQueries({ queryKey: ['profiles'] }); setEditProfile(null) },
   })
 
   const deleteMutation = useMutation({
     mutationFn: async (id: string) => {
-      const supabase = createClient()
-      const token = (await supabase.auth.getSession()).data.session?.access_token
-      await fetch('/api/profiles', {
-        method: 'DELETE',
-        headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
-        body: JSON.stringify({ id }),
-      })
+      await apiFetch('/api/profiles', { method: 'DELETE', body: JSON.stringify({ id }) })
     },
     onSuccess: () => queryClient.invalidateQueries({ queryKey: ['profiles'] }),
   })

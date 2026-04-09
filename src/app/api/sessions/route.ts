@@ -1,14 +1,11 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { createClient } from '@/lib/supabase'
+import { db } from '@/lib/db'
+import { getUserId } from '@/lib/auth'
 
 export async function GET(req: NextRequest) {
   try {
-    const supabase = createClient()
-    const token = req.headers.get('Authorization')?.replace('Bearer ', '')
-    if (!token) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
-
-    const { data: { user } } = await supabase.auth.getUser(token)
-    if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+    const userId = await getUserId(req)
+    if (!userId) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
 
     const url = new URL(req.url)
     const from = url.searchParams.get('from')
@@ -16,18 +13,31 @@ export async function GET(req: NextRequest) {
     const limit = parseInt(url.searchParams.get('limit') || '100')
     const offset = parseInt(url.searchParams.get('offset') || '0')
 
-    let query = supabase
-      .from('sessions')
-      .select('*')
-      .eq('user_id', user.id)
-      .order('created_at', { ascending: false })
-      .range(offset, offset + limit - 1)
+    const where: Record<string, any> = { userId }
+    if (from || to) {
+      where.createdAt = {}
+      if (from) where.createdAt.gte = new Date(from)
+      if (to) where.createdAt.lte = new Date(to + 'T23:59:59')
+    }
 
-    if (from) query = query.gte('created_at', from)
-    if (to) query = query.lte('created_at', to + 'T23:59:59')
+    const sessions = await db.session.findMany({
+      where,
+      orderBy: { createdAt: 'desc' },
+      skip: offset,
+      take: limit,
+    })
 
-    const { data, error } = await query
-    if (error) return NextResponse.json({ error: error.message }, { status: 500 })
+    // Transform to match expected shape
+    const data = sessions.map(s => ({
+      id: s.id,
+      user_id: s.userId,
+      created_at: s.createdAt.toISOString(),
+      duration: s.duration,
+      intensity: s.intensity,
+      profile: s.profileId,
+      notes: s.notes,
+      updated_at: s.updatedAt.toISOString(),
+    }))
 
     return NextResponse.json({ data })
   } catch (e: any) {
@@ -37,28 +47,31 @@ export async function GET(req: NextRequest) {
 
 export async function POST(req: NextRequest) {
   try {
-    const supabase = createClient()
-    const token = req.headers.get('Authorization')?.replace('Bearer ', '')
-    if (!token) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
-
-    const { data: { user } } = await supabase.auth.getUser(token)
-    if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+    const userId = await getUserId(req)
+    if (!userId) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
 
     const body = await req.json()
-    const { data, error } = await supabase
-      .from('sessions')
-      .insert({
-        user_id: user.id,
+    const session = await db.session.create({
+      data: {
+        userId,
         duration: body.duration || 0,
         intensity: body.intensity || 3,
-        profile: body.profile || null,
+        profileId: body.profile || null,
         notes: body.notes || null,
-      })
-      .select()
-      .single()
+      },
+    })
 
-    if (error) return NextResponse.json({ error: error.message }, { status: 500 })
-    return NextResponse.json({ data })
+    return NextResponse.json({
+      data: {
+        id: session.id,
+        user_id: session.userId,
+        created_at: session.createdAt.toISOString(),
+        duration: session.duration,
+        intensity: session.intensity,
+        profile: session.profileId,
+        notes: session.notes,
+      },
+    })
   } catch (e: any) {
     return NextResponse.json({ error: e.message }, { status: 500 })
   }
@@ -66,30 +79,21 @@ export async function POST(req: NextRequest) {
 
 export async function PUT(req: NextRequest) {
   try {
-    const supabase = createClient()
-    const token = req.headers.get('Authorization')?.replace('Bearer ', '')
-    if (!token) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
-
-    const { data: { user } } = await supabase.auth.getUser(token)
-    if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+    const userId = await getUserId(req)
+    if (!userId) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
 
     const body = await req.json()
-    const { data, error } = await supabase
-      .from('sessions')
-      .update({
+    const session = await db.session.updateMany({
+      where: { id: body.id, userId },
+      data: {
         duration: body.duration,
         intensity: body.intensity,
-        profile: body.profile,
+        profileId: body.profile,
         notes: body.notes,
-        updated_at: new Date().toISOString(),
-      })
-      .eq('id', body.id)
-      .eq('user_id', user.id)
-      .select()
-      .single()
+      },
+    })
 
-    if (error) return NextResponse.json({ error: error.message }, { status: 500 })
-    return NextResponse.json({ data })
+    return NextResponse.json({ data: { updated: session.count } })
   } catch (e: any) {
     return NextResponse.json({ error: e.message }, { status: 500 })
   }
@@ -97,23 +101,13 @@ export async function PUT(req: NextRequest) {
 
 export async function DELETE(req: NextRequest) {
   try {
-    const supabase = createClient()
-    const token = req.headers.get('Authorization')?.replace('Bearer ', '')
-    if (!token) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
-
-    const { data: { user } } = await supabase.auth.getUser(token)
-    if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+    const userId = await getUserId(req)
+    if (!userId) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
 
     const id = new URL(req.url).searchParams.get('id')
     if (!id) return NextResponse.json({ error: 'Missing id' }, { status: 400 })
 
-    const { error } = await supabase
-      .from('sessions')
-      .delete()
-      .eq('id', id)
-      .eq('user_id', user.id)
-
-    if (error) return NextResponse.json({ error: error.message }, { status: 500 })
+    await db.session.deleteMany({ where: { id, userId } })
     return NextResponse.json({ success: true })
   } catch (e: any) {
     return NextResponse.json({ error: e.message }, { status: 500 })

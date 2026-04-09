@@ -4,7 +4,7 @@ import { useEffect, useState, useCallback, useMemo, useRef } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { useTimerStore } from '@/store/timer-store'
 import { useAuthStore, useSettingsStore } from '@/store/auth-store'
-import { createClient } from '@/lib/supabase'
+import { apiFetch } from '@/lib/supabase'
 import {
   startAmbient,
   stopAmbient,
@@ -286,13 +286,8 @@ export function TimerView() {
     queryKey: ['profiles'],
     queryFn: async () => {
       if (!user) return []
-      const supabase = createClient()
-      const token = (await supabase.auth.getSession()).data.session?.access_token
-      const res = await fetch('/api/profiles', {
-        headers: { Authorization: `Bearer ${token}` },
-      })
-      const json = await res.json()
-      return json.data || []
+      const res = await apiFetch('/api/profiles')
+      return res.data || []
     },
     enabled: !!user,
   })

@@ -1,6 +1,6 @@
 import { create } from 'zustand'
 import type { TimerState, Phase, TimerStatus, Tone, SessionMood } from '@/lib/types'
-import { createClient } from '@/lib/supabase'
+import { apiFetch } from '@/lib/supabase'
 import { useSettingsStore } from './auth-store'
 import { playSound, startHeartbeat, stopHeartbeat } from '@/lib/audio'
 import { notifyPhaseChange, notifySessionComplete } from '@/lib/notifications'
@@ -58,7 +58,6 @@ export const useTimerStore = create<TimerStore>((set, get) => ({
     const tone = profile?.tone ?? settings.tone
     const intensityMode = profile?.intensity_mode ?? settings.intensityMode
 
-    // Adaptive logic: increase difficulty with streak
     const { streak } = get()
     const adaptiveMultiplier = streak > 7 ? 1.3 : streak > 3 ? 1.15 : 1
     const adaptiveDur = Math.round(activeDur * adaptiveMultiplier)
@@ -85,7 +84,6 @@ export const useTimerStore = create<TimerStore>((set, get) => ({
       lastFiveSeconds: false,
     })
 
-    // Audio + notifications + haptics
     if (settings.soundEnabled) playSound('active-start')
     if (settings.notificationsEnabled) notifyPhaseChange('active', 1)
     vibratePhaseTransition('active')
@@ -122,7 +120,6 @@ export const useTimerStore = create<TimerStore>((set, get) => ({
       edgeCount: 0,
       lastFiveSeconds: false,
     })
-    // Exit focus mode on reset
     if (get().focusMode) {
       set({ focusMode: false })
       try { document.exitFullscreen?.() } catch {}
@@ -139,14 +136,12 @@ export const useTimerStore = create<TimerStore>((set, get) => ({
     const activeTotal = state.activeDuration
     const isLastFive = newRemaining <= 5 && newRemaining > 0
 
-    // Last 5 seconds warning sound + haptic
     if (isLastFive && !state.lastFiveSeconds) {
       set({ lastFiveSeconds: true })
       if (settings.soundEnabled) playSound('warning')
       vibrateTick()
     }
 
-    // Edging warning at 85% of active phase
     if (state.phase === 'active' && !state.showEdgingWarning) {
       const threshold = Math.round(activeTotal * 0.85)
       const elapsed = activeTotal - newRemaining
@@ -158,7 +153,6 @@ export const useTimerStore = create<TimerStore>((set, get) => ({
       }
     }
 
-    // Force transition with randomized timing (88-98% of active phase)
     if (state.phase === 'active' && state.showEdgingWarning) {
       const elapsed = activeTotal - newRemaining
       const minPoint = Math.round(activeTotal * 0.88)
@@ -177,7 +171,6 @@ export const useTimerStore = create<TimerStore>((set, get) => ({
 
     set({ remainingSeconds: newRemaining, elapsedTime: newElapsed, lastFiveSeconds: isLastFive })
 
-    // Tick sound every 15 seconds + haptic
     if (settings.soundEnabled && newElapsed % 15 === 0) {
       playSound(state.phase === 'active' ? 'active-tick' : 'rest-tick')
     }
@@ -185,7 +178,6 @@ export const useTimerStore = create<TimerStore>((set, get) => ({
       vibrateTick()
     }
 
-    // Show prompts at intervals (every 30s)
     if (state.intensityMode && newElapsed % 30 === 0) {
       get().fetchPrompt()
     }
@@ -196,7 +188,6 @@ export const useTimerStore = create<TimerStore>((set, get) => ({
     const settings = useSettingsStore.getState()
 
     if (state.phase === 'active') {
-      // Transition to rest
       set({
         phase: 'rest',
         remainingSeconds: state.restDuration,
@@ -210,7 +201,6 @@ export const useTimerStore = create<TimerStore>((set, get) => ({
       vibratePhaseTransition('rest')
       if (state.intensityMode) get().fetchPrompt()
     } else {
-      // Rest complete, next cycle
       const nextCycle = state.cycle + 1
       if (!state.infiniteCycles && nextCycle > state.totalCycles) {
         set({ status: 'completed', phase: 'active', showEdgingWarning: false })
@@ -222,7 +212,6 @@ export const useTimerStore = create<TimerStore>((set, get) => ({
         }
         return
       }
-      // Increase intensity per cycle (escalating)
       const intensityBoost = state.intensityMode ? (nextCycle % 2 === 0 ? 1 : 0) : (nextCycle % 3 === 0 ? 1 : 0)
       const newIntensity = Math.min(5, state.currentIntensity + intensityBoost)
       set({
@@ -239,7 +228,6 @@ export const useTimerStore = create<TimerStore>((set, get) => ({
       vibratePhaseTransition('active')
       if (state.intensityMode) get().fetchPrompt()
 
-      // Speed up heartbeat with intensity
       if (state.intensityMode && settings.soundEnabled) {
         startHeartbeat(Math.min(140, 60 + state.streak * 5 + newIntensity * 8))
       }
@@ -249,22 +237,12 @@ export const useTimerStore = create<TimerStore>((set, get) => ({
   fetchPrompt: async () => {
     const state = get()
     try {
-      const supabase = createClient()
-      const { data } = await supabase
-        .from('prompts')
-        .select('content')
-        .eq('tone', state.tone)
-        .eq('phase', state.phase)
-        .gte('intensity', state.currentIntensity - 1)
-        .lte('intensity', state.currentIntensity + 1)
-
-      if (data && data.length > 0) {
-        const random = data[Math.floor(Math.random() * data.length)]
+      const res = await apiFetch(`/api/prompts?tone=${state.tone}&phase=${state.phase}&intensity=${state.currentIntensity}`)
+      if (res.data && res.data.length > 0) {
+        const random = res.data[Math.floor(Math.random() * res.data.length)]
         set({ currentPrompt: random.content })
       }
-    } catch {
-      // Silently fail for prompts
-    }
+    } catch {}
   },
 
   completeSession: async () => {
@@ -274,23 +252,23 @@ export const useTimerStore = create<TimerStore>((set, get) => ({
 
     const duration = state.elapsedTime
 
-    // Build notes with mood and focus mode metadata
     const metadata: Record<string, unknown> = {}
     if (state.sessionMood) metadata.mood = state.sessionMood
     if (state.focusMode) metadata.focusModeUsed = true
     const notes = Object.keys(metadata).length > 0 ? JSON.stringify(metadata) : null
 
-    // Save session to Supabase
-    const supabase = createClient()
-    await supabase.from('sessions').insert({
-      user_id: user.id,
-      duration,
-      intensity: state.currentIntensity,
-      profile: state.activeProfileId,
-      notes,
-    })
+    try {
+      await apiFetch('/api/sessions', {
+        method: 'POST',
+        body: JSON.stringify({
+          duration,
+          intensity: state.currentIntensity,
+          profile: state.activeProfileId,
+          notes,
+        }),
+      })
+    } catch {}
 
-    // Update gamification with context for achievement checking
     const { useGamificationStore } = await import('./auth-store')
     useGamificationStore.getState().incrementSessions(duration, {
       peakIntensity: state.currentIntensity,
@@ -317,24 +295,22 @@ export const useTimerStore = create<TimerStore>((set, get) => ({
       const { useChallengeStore } = await import('@/store/challenge-store')
       const { useGamificationStore: gamStore } = await import('./auth-store')
       const gam = gamStore.getState()
-      // Build challenge stats from today's data
-      const { useAuthStore } = await import('./auth-store')
       const authState = useAuthStore.getState()
-      const supabaseForChallenges = createClient()
+
       const todayStr = new Date().toISOString().split('T')[0]
       const weekAgo = new Date(Date.now() - 7 * 86400000).toISOString()
       const [todayRes, weekRes] = await Promise.all([
-        supabaseForChallenges.from('sessions').select('duration, intensity').eq('user_id', user.id).gte('created_at', todayStr),
-        supabaseForChallenges.from('sessions').select('duration, intensity').eq('user_id', user.id).gte('created_at', weekAgo),
+        apiFetch(`/api/sessions?from=${todayStr}&limit=100`),
+        apiFetch(`/api/sessions?from=${weekAgo}&limit=200`),
       ])
       const todaySessions = todayRes.data || []
       const weekSessions = weekRes.data || []
       useChallengeStore.getState().checkChallenges({
         todaySessions: todaySessions.length,
-        todayDuration: Math.round(todaySessions.reduce((a, s: any) => a + s.duration, 0) / 60),
+        todayDuration: Math.round(todaySessions.reduce((a: number, s: any) => a + s.duration, 0) / 60),
         todayMaxIntensity: todaySessions.length > 0 ? Math.max(...todaySessions.map((s: any) => s.intensity)) : 0,
         weekSessions: weekSessions.length,
-        weekDuration: Math.round(weekSessions.reduce((a, s: any) => a + s.duration, 0) / 60),
+        weekDuration: Math.round(weekSessions.reduce((a: number, s: any) => a + s.duration, 0) / 60),
         weekMaxIntensity: weekSessions.length > 0 ? Math.max(...weekSessions.map((s: any) => s.intensity)) : 0,
         currentStreak: gam.streak,
         focusModeSessionsToday: todaySessions.filter((s: any) => {
