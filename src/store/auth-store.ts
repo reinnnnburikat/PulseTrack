@@ -7,11 +7,12 @@ interface UserInfo {
   email: string
   displayName?: string | null
   avatarUrl?: string | null
+  bio?: string | null
 }
 
 interface AuthState {
   user: UserInfo | null
-  profile: { id: string; email: string; display_name: string | null; avatar_url: string | null; created_at: string } | null
+  profile: { id: string; email: string; display_name: string | null; avatar_url: string | null; bio: string | null; created_at: string } | null
   loading: boolean
   view: AppView
   setView: (view: AppView) => void

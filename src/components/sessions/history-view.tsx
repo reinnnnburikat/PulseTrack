@@ -42,12 +42,21 @@ import { format, parseISO, startOfMonth, endOfMonth, eachDayOfInterval, isSameDa
 import type { Session, SessionMood } from '@/lib/types'
 import { MOOD_CONFIG } from '@/lib/types'
 
+const MOOD_OPTIONS: { value: string; label: string }[] = [
+  { value: 'all', label: 'All moods' },
+  ...Object.entries(MOOD_CONFIG).map(([key, config]) => ({
+    value: key,
+    label: `${config.emoji} ${config.label}`,
+  })),
+]
+
 export function HistoryView() {
   const { user } = useAuthStore()
   const queryClient = useQueryClient()
   const [viewMode, setViewMode] = useState<'table' | 'calendar'>('table')
   const [page, setPage] = useState(0)
   const [intensityFilter, setIntensityFilter] = useState<string>('all')
+  const [moodFilter, setMoodFilter] = useState<string>('all')
   const [calendarDate, setCalendarDate] = useState<Date>(new Date())
   const [selectedDay, setSelectedDay] = useState<Date | null>(null)
   const [editSession, setEditSession] = useState<Session | null>(null)
@@ -91,11 +100,22 @@ export function HistoryView() {
 
   const filteredSessions = (sessions as Session[]).filter((s) => {
     if (intensityFilter !== 'all' && s.intensity !== parseInt(intensityFilter)) return false
+    if (moodFilter !== 'all' && s.mood !== moodFilter) return false
     return true
   })
 
   const paginatedSessions = filteredSessions.slice(page * pageSize, (page + 1) * pageSize)
   const totalPages = Math.ceil(filteredSessions.length / pageSize)
+
+  // Reset page when filters change
+  const handleIntensityFilterChange = (val: string) => {
+    setIntensityFilter(val)
+    setPage(0)
+  }
+  const handleMoodFilterChange = (val: string) => {
+    setMoodFilter(val)
+    setPage(0)
+  }
 
   // Calendar helpers
   const monthStart = startOfMonth(calendarDate)
@@ -109,10 +129,15 @@ export function HistoryView() {
 
   // CSV Export
   const exportCSV = () => {
-    const headers = ['Date', 'Duration (s)', 'Intensity', 'Profile', 'Notes']
-    const rows = filteredSessions.map((s: Session) => [
-      s.created_at, s.duration, s.intensity, s.profile || '', s.notes || ''
-    ])
+    const headers = ['Date', 'Duration (s)', 'Mood', 'Intensity', 'Profile', 'Notes']
+    const rows = filteredSessions.map((s: Session) => {
+      const moodLabel = s.mood && MOOD_CONFIG[s.mood as SessionMood]
+        ? `${MOOD_CONFIG[s.mood as SessionMood].emoji} ${MOOD_CONFIG[s.mood as SessionMood].label}`
+        : ''
+      return [
+        s.created_at, s.duration, moodLabel, s.intensity, s.profile || '', s.notes || ''
+      ]
+    })
     const csv = [headers, ...rows].map((r) => r.join(',')).join('\n')
     const blob = new Blob([csv], { type: 'text/csv' })
     const url = URL.createObjectURL(blob)
@@ -127,6 +152,13 @@ export function HistoryView() {
     const m = Math.floor(seconds / 60)
     const s = seconds % 60
     return m > 0 ? `${m}m ${s}s` : `${s}s`
+  }
+
+  const getMoodDisplay = (mood: string | null) => {
+    if (!mood) return null
+    const config = MOOD_CONFIG[mood as SessionMood]
+    if (!config) return null
+    return config
   }
 
   if (isLoading) {
@@ -173,7 +205,7 @@ export function HistoryView() {
             <CalendarDays className="w-3.5 h-3.5" /> Calendar
           </button>
         </div>
-        <Select value={intensityFilter} onValueChange={setIntensityFilter}>
+        <Select value={intensityFilter} onValueChange={handleIntensityFilterChange}>
           <SelectTrigger className="w-32 h-8 text-xs bg-card/60 border-border/50">
             <SelectValue />
           </SelectTrigger>
@@ -181,6 +213,16 @@ export function HistoryView() {
             <SelectItem value="all">All levels</SelectItem>
             {[1, 2, 3, 4, 5].map((i) => (
               <SelectItem key={i} value={String(i)}>Intensity {i}</SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+        <Select value={moodFilter} onValueChange={handleMoodFilterChange}>
+          <SelectTrigger className="w-36 h-8 text-xs bg-card/60 border-border/50">
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent>
+            {MOOD_OPTIONS.map((opt) => (
+              <SelectItem key={opt.value} value={opt.value}>{opt.label}</SelectItem>
             ))}
           </SelectContent>
         </Select>
@@ -198,6 +240,7 @@ export function HistoryView() {
                       <tr className="border-b border-border/50">
                         <th className="text-left text-xs font-medium text-muted-foreground p-3">Date</th>
                         <th className="text-left text-xs font-medium text-muted-foreground p-3">Duration</th>
+                        <th className="text-left text-xs font-medium text-muted-foreground p-3 hidden sm:table-cell">Mood</th>
                         <th className="text-left text-xs font-medium text-muted-foreground p-3 hidden sm:table-cell">Intensity</th>
                         <th className="text-left text-xs font-medium text-muted-foreground p-3 hidden md:table-cell">Profile</th>
                         <th className="text-right text-xs font-medium text-muted-foreground p-3">Actions</th>
@@ -205,8 +248,7 @@ export function HistoryView() {
                     </thead>
                     <tbody>
                       {paginatedSessions.map((s: Session, i: number) => {
-                        let sessionMood: SessionMood | null = null
-                        try { const meta = JSON.parse(s.notes || '{}'); sessionMood = meta.mood || null } catch {}
+                        const moodDisplay = getMoodDisplay(s.mood)
                         return (
                         <motion.tr
                           key={s.id}
@@ -217,11 +259,19 @@ export function HistoryView() {
                         >
                           <td className="p-3 text-sm">
                             <div className="flex items-center gap-2">
-                              {sessionMood && <span className="text-xs">{MOOD_CONFIG[sessionMood]?.emoji}</span>}
                               {format(parseISO(s.created_at), 'MMM d, h:mm a')}
                             </div>
                           </td>
                           <td className="p-3 text-sm font-medium">{formatDuration(s.duration)}</td>
+                          <td className="p-3 hidden sm:table-cell">
+                            {moodDisplay ? (
+                              <span className={`text-sm ${moodDisplay.color}`} title={moodDisplay.label}>
+                                {moodDisplay.emoji} <span className="text-xs text-muted-foreground hidden lg:inline">{moodDisplay.label}</span>
+                              </span>
+                            ) : (
+                              <span className="text-xs text-muted-foreground">—</span>
+                            )}
+                          </td>
                           <td className="p-3 hidden sm:table-cell">
                             <Badge variant="outline" className={`text-[10px] border-0 ${
                               s.intensity >= 4 ? 'bg-red-500/20 text-red-300' :
@@ -336,12 +386,11 @@ export function HistoryView() {
                   >
                     <h3 className="text-sm font-medium">{format(selectedDay, 'MMMM d, yyyy')}</h3>
                     {selectedDaySessions.map((s: Session) => {
-                      let sessionMood: SessionMood | null = null
-                      try { const meta = JSON.parse(s.notes || '{}'); sessionMood = meta.mood || null } catch {}
+                      const moodDisplay = getMoodDisplay(s.mood)
                       return (
                       <div key={s.id} className="flex justify-between items-center py-2 px-3 bg-background/30 rounded-lg">
                         <div className="flex items-center gap-2">
-                          {sessionMood && <span className="text-sm">{MOOD_CONFIG[sessionMood]?.emoji}</span>}
+                          {moodDisplay && <span className="text-sm">{moodDisplay.emoji}</span>}
                           <span className="text-sm">{format(parseISO(s.created_at), 'h:mm a')}</span>
                           <Badge variant="outline" className="text-[10px] border-0 bg-primary/10 text-primary">I{s.intensity}</Badge>
                         </div>

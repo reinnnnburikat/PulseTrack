@@ -16,6 +16,7 @@ export interface Session {
   duration: number
   intensity: number
   profile: string | null
+  mood: string | null
   notes: string | null
   updated_at?: string
 }

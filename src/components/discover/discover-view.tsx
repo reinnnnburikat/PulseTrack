@@ -1,6 +1,6 @@
 'use client'
 
-import { useState } from 'react'
+import { useState, useMemo } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { useAuthStore } from '@/store/auth-store'
 import { apiFetch } from '@/lib/supabase'
@@ -27,8 +27,11 @@ import {
   Flame,
   Sparkles,
   Loader2,
+  ArrowUpDown,
+  Clock,
+  Activity,
 } from 'lucide-react'
-import { setView } from '@/store/auth-store'
+import { useMatchStore } from '@/store/match-store'
 
 const roleIcons: Record<string, React.ReactNode> = {
   top: <Crown className="w-4 h-4 text-orange-400" />,
@@ -54,11 +57,18 @@ const kinkLabels: Record<string, string> = {
   explorer: 'Explorer',
 }
 
+const SORT_OPTIONS = [
+  { value: 'compatible', label: 'Most Compatible' },
+  { value: 'newest', label: 'Newest' },
+  { value: 'active', label: 'Most Active' },
+] as const
+
 export function DiscoverView() {
   const { user } = useAuthStore()
   const [roleFilter, setRoleFilter] = useState<string>('all')
   const [traitFilter, setTraitFilter] = useState<string>('all')
   const [searchQuery, setSearchQuery] = useState('')
+  const [sortBy, setSortBy] = useState<string>('compatible')
 
   const { data: profiles = [], isLoading } = useQuery({
     queryKey: ['discover', roleFilter, traitFilter],
@@ -72,11 +82,26 @@ export function DiscoverView() {
     enabled: !!user,
   })
 
-  const filteredProfiles = searchQuery
-    ? profiles.filter((p: any) =>
-        p.display_name?.toLowerCase().includes(searchQuery.toLowerCase())
-      )
-    : profiles
+  const filteredAndSortedProfiles = useMemo(() => {
+    let result = searchQuery
+      ? profiles.filter((p: any) =>
+          p.display_name?.toLowerCase().includes(searchQuery.toLowerCase())
+        )
+      : [...profiles]
+
+    if (sortBy === 'newest') {
+      result.sort((a: any, b: any) => {
+        const dateA = a.created_at ? new Date(a.created_at).getTime() : 0
+        const dateB = b.created_at ? new Date(b.created_at).getTime() : 0
+        return dateB - dateA
+      })
+    } else if (sortBy === 'active') {
+      result.sort((a: any, b: any) => (b.total_sessions || 0) - (a.total_sessions || 0))
+    }
+    // 'compatible' keeps the default API order
+
+    return result
+  }, [profiles, searchQuery, sortBy])
 
   if (isLoading) {
     return (
@@ -138,12 +163,23 @@ export function DiscoverView() {
                 <SelectItem value="switch">Switch</SelectItem>
               </SelectContent>
             </Select>
+            <Select value={sortBy} onValueChange={setSortBy}>
+              <SelectTrigger className="w-full sm:w-44 bg-background/50 border-border/50">
+                <ArrowUpDown className="w-3.5 h-3.5 mr-1.5 text-muted-foreground" />
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                {SORT_OPTIONS.map((opt) => (
+                  <SelectItem key={opt.value} value={opt.value}>{opt.label}</SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
           </div>
         </CardContent>
       </Card>
 
       {/* Profiles Grid */}
-      {filteredProfiles.length === 0 ? (
+      {filteredAndSortedProfiles.length === 0 ? (
         <motion.div
           initial={{ opacity: 0 }}
           animate={{ opacity: 1 }}
@@ -158,7 +194,7 @@ export function DiscoverView() {
         </motion.div>
       ) : (
         <div className="grid sm:grid-cols-2 gap-4">
-          {filteredProfiles.map((profile: any, i: number) => (
+          {filteredAndSortedProfiles.map((profile: any, i: number) => (
             <motion.div
               key={profile.user_id}
               initial={{ opacity: 0, y: 10 }}
@@ -172,17 +208,18 @@ export function DiscoverView() {
                       {profile.display_name?.[0]?.toUpperCase() || '?'}
                     </div>
                     <div className="flex-1 min-w-0">
-                      <div className="flex items-center gap-2">
-                        <h3 className="font-semibold text-sm truncate">
-                          {profile.display_name || 'Anonymous'}
-                        </h3>
-                        <Badge variant="secondary" className="text-[10px] bg-violet-500/15 text-violet-300 border-0 shrink-0">
+                      <h3 className="font-semibold text-sm truncate">
+                        {profile.display_name || 'Anonymous'}
+                      </h3>
+                      <div className="flex items-center gap-2 mt-0.5 text-xs text-muted-foreground">
+                        <Badge variant="secondary" className="text-[10px] bg-violet-500/15 text-violet-300 border-0 py-0 h-4">
                           Lv.{profile.level}
                         </Badge>
+                        <span className="text-muted-foreground">
+                          <Activity className="w-3 h-3 inline mr-0.5" />
+                          {profile.total_sessions} session{profile.total_sessions !== 1 ? 's' : ''}
+                        </span>
                       </div>
-                      <p className="text-xs text-muted-foreground mt-0.5">
-                        {profile.total_sessions} sessions
-                      </p>
                     </div>
                   </div>
 
@@ -233,9 +270,7 @@ export function DiscoverView() {
                       variant="outline"
                       className="w-full border-primary/30 hover:bg-primary/10 text-primary text-xs group-hover:bg-primary/10 transition-colors"
                       onClick={() => {
-                        // Store selected user for matching
-                        ;(window as any).__selectedMatchUser = profile.user_id
-                        ;(window as any).__selectedMatchName = profile.display_name
+                        useMatchStore.getState().selectUser(profile.user_id, profile.display_name)
                         useAuthStore.getState().setView('matches')
                       }}
                     >
@@ -251,7 +286,7 @@ export function DiscoverView() {
       )}
 
       <p className="text-center text-xs text-muted-foreground/50">
-        {filteredProfiles.length} profile{filteredProfiles.length !== 1 ? 's' : ''} found
+        {filteredAndSortedProfiles.length} profile{filteredAndSortedProfiles.length !== 1 ? 's' : ''} found
       </p>
     </div>
   )

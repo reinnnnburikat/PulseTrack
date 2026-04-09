@@ -185,3 +185,8 @@
 .animate-edge-warning {
   animation: edge-warning 0.8s ease-in-out infinite;
 }
+
+@keyframes edge-warning-border {
+  0%, 100% { box-shadow: 0 0 0px oklch(0.60 0.24 25 / 0%); }
+  50% { box-shadow: 0 0 16px oklch(0.60 0.24 25 / 50%); }
+}

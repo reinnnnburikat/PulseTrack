@@ -253,7 +253,6 @@ export const useTimerStore = create<TimerStore>((set, get) => ({
     const duration = state.elapsedTime
 
     const metadata: Record<string, unknown> = {}
-    if (state.sessionMood) metadata.mood = state.sessionMood
     if (state.focusMode) metadata.focusModeUsed = true
     const notes = Object.keys(metadata).length > 0 ? JSON.stringify(metadata) : null
 
@@ -264,6 +263,7 @@ export const useTimerStore = create<TimerStore>((set, get) => ({
           duration,
           intensity: state.currentIntensity,
           profile: state.activeProfileId,
+          mood: state.sessionMood,
           notes,
         }),
       })

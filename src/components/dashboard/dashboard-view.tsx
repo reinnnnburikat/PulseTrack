@@ -34,6 +34,7 @@ import {
   Sparkles,
   Sun,
   Moon,
+  CalendarDays,
 } from 'lucide-react'
 import { BarChart, Bar, XAxis, YAxis, ResponsiveContainer, Tooltip, CartesianGrid, PieChart, Pie, Cell } from 'recharts'
 import { format, subDays, isToday, parseISO, isSameDay } from 'date-fns'
@@ -188,12 +189,9 @@ export function DashboardView() {
   const moodData = useMemo(() => {
     const moodCounts: Record<string, number> = {}
     for (const s of typedSessions) {
-      try {
-        const meta = JSON.parse(s.notes || '{}')
-        if (meta.mood) {
-          moodCounts[meta.mood] = (moodCounts[meta.mood] || 0) + 1
-        }
-      } catch { /* no mood data */ }
+      if (s.mood) {
+        moodCounts[s.mood] = (moodCounts[s.mood] || 0) + 1
+      }
     }
     return Object.entries(moodCounts).map(([mood, count]) => ({
       mood,
@@ -259,6 +257,55 @@ export function DashboardView() {
       }).length,
     }
   }, [typedSessions, gam.streak])
+
+  // ---- Weekly Summary ----
+  const weeklySummary = useMemo(() => {
+    const now = new Date()
+    const dayOfWeek = now.getDay()
+    const mondayOffset = dayOfWeek === 0 ? 6 : dayOfWeek - 1
+    const weekStart = new Date(now)
+    weekStart.setDate(now.getDate() - mondayOffset)
+    weekStart.setHours(0, 0, 0, 0)
+
+    // This week sessions
+    const thisWeekSessions = typedSessions.filter(s => new Date(s.created_at) >= weekStart)
+    const thisWeekTotalMin = Math.round(thisWeekSessions.reduce((a, s) => a + s.duration, 0) / 60)
+
+    // Best day this week
+    const dayCounts: Record<string, number> = {}
+    for (const s of thisWeekSessions) {
+      const dayStr = format(parseISO(s.created_at), 'yyyy-MM-dd')
+      dayCounts[dayStr] = (dayCounts[dayStr] || 0) + 1
+    }
+    let bestDay = ''
+    let bestDayCount = 0
+    for (const [day, count] of Object.entries(dayCounts)) {
+      if (count > bestDayCount) { bestDay = day; bestDayCount = count }
+    }
+
+    // Last week sessions
+    const lastWeekStart = new Date(weekStart)
+    lastWeekStart.setDate(lastWeekStart.getDate() - 7)
+    const lastWeekSessions = typedSessions.filter(s => {
+      const d = new Date(s.created_at)
+      return d >= lastWeekStart && d < weekStart
+    })
+    const diff = thisWeekSessions.length - lastWeekSessions.length
+
+    // Format total time
+    const hours = Math.floor(thisWeekTotalMin / 60)
+    const mins = thisWeekTotalMin % 60
+    const formattedTime = hours > 0 ? `${hours}h ${mins}m` : `${mins}m`
+
+    return {
+      sessions: thisWeekSessions.length,
+      formattedTime,
+      bestDay: bestDay ? format(parseISO(bestDay), 'EEEE') : null,
+      bestDayCount,
+      diff,
+      lastWeekSessions: lastWeekSessions.length,
+    }
+  }, [typedSessions])
 
   // Initialize challenges on mount
   useEffect(() => {
@@ -648,6 +695,49 @@ export function DashboardView() {
         </Card>
       </motion.div>
 
+      {/* Weekly Summary */}
+      <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.225 }}>
+        <Card className="bg-card/60 border-border/50">
+          <CardHeader className="pb-2">
+            <CardTitle className="text-sm flex items-center gap-2">
+              <CalendarDays className="w-4 h-4 text-sky-400" />
+              This Week
+            </CardTitle>
+          </CardHeader>
+          <CardContent>
+            <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+              <div className="p-3 rounded-lg bg-background/30">
+                <p className="text-xs text-muted-foreground">Sessions</p>
+                <p className="text-lg font-bold">{weeklySummary.sessions}</p>
+              </div>
+              <div className="p-3 rounded-lg bg-background/30">
+                <p className="text-xs text-muted-foreground">Total Time</p>
+                <p className="text-lg font-bold">{weeklySummary.formattedTime}</p>
+              </div>
+              <div className="p-3 rounded-lg bg-background/30">
+                <p className="text-xs text-muted-foreground">Best Day</p>
+                <p className="text-lg font-bold">{weeklySummary.bestDay || '—'}</p>
+                {weeklySummary.bestDay && (
+                  <p className="text-[10px] text-muted-foreground">{weeklySummary.bestDayCount} session{weeklySummary.bestDayCount !== 1 ? 's' : ''}</p>
+                )}
+              </div>
+              <div className="p-3 rounded-lg bg-background/30">
+                <p className="text-xs text-muted-foreground">vs Last Week</p>
+                {weeklySummary.diff > 0 ? (
+                  <p className="text-lg font-bold text-emerald-400">+{weeklySummary.diff} session{weeklySummary.diff !== 1 ? 's' : ''}</p>
+                ) : weeklySummary.diff < 0 ? (
+                  <p className="text-lg font-bold text-red-400">{weeklySummary.diff} session{Math.abs(weeklySummary.diff) !== 1 ? 's' : ''}</p>
+                ) : weeklySummary.sessions > 0 ? (
+                  <p className="text-lg font-bold text-muted-foreground">Same</p>
+                ) : (
+                  <p className="text-lg font-bold">—</p>
+                )}
+              </div>
+            </div>
+          </CardContent>
+        </Card>
+      </motion.div>
+
       {/* Phase 3: Daily + Weekly Challenges */}
       <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.23 }}>
         <Card className="bg-card/60 border-border/50">
@@ -957,7 +1047,7 @@ export function DashboardView() {
               <div className="space-y-2 max-h-64 overflow-y-auto">
                 {recentSessions.map((s: Session) => {
                   let sessionMood: SessionMood | null = null
-                  try { const meta = JSON.parse(s.notes || '{}'); sessionMood = meta.mood || null } catch {}
+                  if (s.mood) sessionMood = s.mood as SessionMood
                   return (
                   <div key={s.id} className="flex items-center justify-between py-2 px-3 rounded-lg bg-background/30">
                     <div className="flex items-center gap-3">

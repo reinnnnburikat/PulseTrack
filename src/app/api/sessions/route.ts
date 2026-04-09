@@ -35,6 +35,7 @@ export async function GET(req: NextRequest) {
       duration: s.duration,
       intensity: s.intensity,
       profile: s.profileId,
+      mood: s.mood,
       notes: s.notes,
       updated_at: s.updatedAt.toISOString(),
     }))
@@ -57,6 +58,7 @@ export async function POST(req: NextRequest) {
         duration: body.duration || 0,
         intensity: body.intensity || 3,
         profileId: body.profile || null,
+        mood: body.mood || null,
         notes: body.notes || null,
       },
     })
@@ -69,6 +71,7 @@ export async function POST(req: NextRequest) {
         duration: session.duration,
         intensity: session.intensity,
         profile: session.profileId,
+        mood: session.mood,
         notes: session.notes,
       },
     })

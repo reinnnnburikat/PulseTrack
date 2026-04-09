@@ -3,6 +3,7 @@
 import { useState } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { useAuthStore } from '@/store/auth-store'
+import { useMatchStore } from '@/store/match-store'
 import { apiFetch } from '@/lib/supabase'
 import { motion, AnimatePresence } from 'framer-motion'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
@@ -89,8 +90,7 @@ export function MatchesView() {
   const [calculating, setCalculating] = useState(false)
 
   // Get pre-selected user from discover view
-  const preSelectedUser = typeof window !== 'undefined' ? (window as any).__selectedMatchUser : null
-  const preSelectedName = typeof window !== 'undefined' ? (window as any).__selectedMatchName : null
+  const { selectedUserId: preSelectedUser, selectedUserName: preSelectedName, clearSelection } = useMatchStore()
 
   const { data: matches = [] } = useQuery({
     queryKey: ['matches'],
@@ -110,11 +110,7 @@ export function MatchesView() {
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['matches'] })
-      // Clean up window globals
-      if (typeof window !== 'undefined') {
-        delete (window as any).__selectedMatchUser
-        delete (window as any).__selectedMatchName
-      }
+      clearSelection()
     },
   })
 

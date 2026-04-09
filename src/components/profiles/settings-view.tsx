@@ -10,6 +10,7 @@ import { Label } from '@/components/ui/label'
 import { Switch } from '@/components/ui/switch'
 import { Slider } from '@/components/ui/slider'
 import { Input } from '@/components/ui/input'
+import { Textarea } from '@/components/ui/textarea'
 import { Separator } from '@/components/ui/separator'
 import { Badge } from '@/components/ui/badge'
 import {
@@ -37,6 +38,7 @@ import {
   RefreshCw,
   AlertTriangle,
   WifiOff,
+  Save,
 } from 'lucide-react'
 import { toast } from 'sonner'
 import type { Tone } from '@/lib/types'
@@ -48,12 +50,15 @@ import {
   cancelDailyReminder,
   getNextReminderTime,
 } from '@/lib/notifications'
+import { apiFetch } from '@/lib/supabase'
 
 const toneDescriptions: Record<Tone, { label: string; desc: string; color: string }> = {
   dominant: { label: 'Dominant', desc: 'Commanding, assertive, controlling', color: 'text-red-400' },
   hypnotic: { label: 'Hypnotic', desc: 'Mesmerizing, rhythmic, dreamy', color: 'text-purple-400' },
   teasing: { label: 'Teasing', desc: 'Playful, provocative, challenging', color: 'text-amber-400' },
 }
+
+const BIO_MAX_LENGTH = 200
 
 export function SettingsView() {
   const { user, profile, signOut } = useAuthStore()
@@ -67,7 +72,71 @@ export function SettingsView() {
     syncAll,
   } = useSyncStore()
 
+  // Profile editing state
   const [displayName, setDisplayName] = useState(profile?.display_name || '')
+  const [bio, setBio] = useState('')
+  const [savingProfile, setSavingProfile] = useState(false)
+  const [profileLoaded, setProfileLoaded] = useState(false)
+
+  // Load profile data on mount
+  useEffect(() => {
+    async function loadProfile() {
+      try {
+        const res = await apiFetch('/api/profile/update')
+        const data = res.data
+        if (data) {
+          setDisplayName(data.display_name || '')
+          setBio(data.bio || '')
+          // Also update the auth store with fresh profile data
+          useAuthStore.getState().setProfile({
+            id: data.id,
+            email: data.email,
+            display_name: data.display_name,
+            avatar_url: data.avatar_url,
+            created_at: data.created_at,
+          })
+        }
+      } catch {
+        // Silently fail — fall back to store values
+        if (profile) {
+          setDisplayName(profile.display_name || '')
+        }
+      } finally {
+        setProfileLoaded(true)
+      }
+    }
+    loadProfile()
+  }, [])
+
+  // Save profile handler
+  const handleSaveProfile = async () => {
+    setSavingProfile(true)
+    try {
+      const res = await apiFetch('/api/profile/update', {
+        method: 'PUT',
+        body: JSON.stringify({
+          display_name: displayName.trim(),
+          bio: bio.trim(),
+        }),
+      })
+      const data = res.data
+      if (data) {
+        useAuthStore.getState().setProfile({
+          id: data.id,
+          email: data.email,
+          display_name: data.display_name,
+          avatar_url: data.avatar_url,
+          created_at: data.created_at,
+        })
+      }
+      toast.success('Profile updated')
+    } catch (err: any) {
+      toast.error(err.message || 'Failed to update profile')
+    } finally {
+      setSavingProfile(false)
+    }
+  }
+
   const [saved, setSaved] = useState(false)
 
   // Volume state
@@ -551,8 +620,45 @@ export function SettingsView() {
               onChange={(e) => setDisplayName(e.target.value)}
               className="bg-background/50 mt-1"
               placeholder="Your name"
+              maxLength={50}
             />
           </div>
+          <div>
+            <div className="flex items-center justify-between">
+              <Label className="text-xs">Bio</Label>
+              <span className={`text-[10px] tabular-nums ${bio.length > BIO_MAX_LENGTH ? 'text-destructive' : 'text-muted-foreground'}`}>
+                {bio.length}/{BIO_MAX_LENGTH}
+              </span>
+            </div>
+            <Textarea
+              value={bio}
+              onChange={(e) => {
+                if (e.target.value.length <= BIO_MAX_LENGTH) {
+                  setBio(e.target.value)
+                }
+              }}
+              className="bg-background/50 mt-1 resize-none"
+              placeholder="Tell others a bit about yourself..."
+              rows={3}
+            />
+          </div>
+          <Button
+            onClick={handleSaveProfile}
+            disabled={savingProfile || !profileLoaded}
+            className="w-full"
+          >
+            {savingProfile ? (
+              <>
+                <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                Saving…
+              </>
+            ) : (
+              <>
+                <Save className="w-4 h-4 mr-2" />
+                Save Profile
+              </>
+            )}
+          </Button>
           <Button variant="outline" onClick={signOut} className="w-full border-destructive/30 text-destructive hover:bg-destructive/10">
             <LogOut className="w-4 h-4 mr-2" /> Sign Out
           </Button>
@@ -679,7 +785,7 @@ export function SettingsView() {
       {/* About */}
       <Card className="bg-card/60 border-border/50">
         <CardContent className="p-4 text-center">
-          <p className="text-xs text-muted-foreground">PulseTrack v2.0.0</p>
+          <p className="text-xs text-muted-foreground">PulseTrack v3.0.0</p>
           <p className="text-xs text-muted-foreground/60 mt-1">Made with 💓</p>
         </CardContent>
       </Card>
