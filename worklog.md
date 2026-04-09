@@ -66,3 +66,30 @@ Stage Summary:
 - Enhanced views with sorting, filtering, weekly summaries
 - Commit: 343e9c7 pushed to main
 - GitHub: https://github.com/reinnnnburikat/PulseTrack
+
+---
+Task ID: 3
+Agent: Main
+Task: Fix Google OAuth login/signup
+
+Work Log:
+- Updated Prisma schema: made `passwordHash` optional, added `provider` (default "email") and `providerId` fields to User model
+- Ran `bun run db:push` to sync schema changes to SQLite
+- Created `/api/auth/google/route.ts` — POST endpoint that verifies Google ID tokens via Google's tokeninfo API, creates/links user accounts, and sets session cookies
+- Rewrote `login-form.tsx` to include "Continue with Google" button using Google Identity Services (GIS) popup flow
+- GIS library loaded dynamically via script tag, initialized with callback
+- Used custom DOM events (pulsetrack:google-loading/error/success) to communicate between GIS callback and React state (avoids React 19 ref-during-render lint errors)
+- Added proper Google logo SVG in the sign-in button
+- Added "or" separator between Google button and email/password form
+- Updated `app-shell.tsx` to use shadcn Avatar component with AvatarImage/AvatarFallback for displaying Google profile pictures
+- Google users who sign up get auto-linked: if an email account already exists, it's upgraded to Google provider
+- All lint checks pass (0 errors, 0 warnings)
+- Dev server compiles successfully (GET / 200)
+
+Stage Summary:
+- Google OAuth fully implemented using Google Identity Services (popup-based, no redirect needed)
+- Backend: `/api/auth/google` verifies tokens, creates/links accounts, issues session cookies
+- Frontend: "Continue with Google" button with proper loading states and error handling
+- Avatar display: Google profile pictures shown in sidebar and mobile header via shadcn Avatar component
+- Account linking: existing email accounts automatically linked when user signs in with same Google email
+- Requirements: User needs to set `NEXT_PUBLIC_GOOGLE_CLIENT_ID` in `.env.local` and configure authorized domains in Google Cloud Console

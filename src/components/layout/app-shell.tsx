@@ -30,6 +30,7 @@ import {
   TooltipContent,
 } from '@/components/ui/tooltip'
 import { cn } from '@/lib/utils'
+import { Avatar, AvatarImage, AvatarFallback } from '@/components/ui/avatar'
 
 const navItems = [
   { key: 'dashboard' as const, label: 'Dashboard', icon: LayoutDashboard },
@@ -216,9 +217,12 @@ export function AppShell({ children }: { children: React.ReactNode }) {
           </div>
 
           <div className="flex items-center gap-3 px-3 py-2 mb-2">
-            <div className="w-8 h-8 rounded-full bg-primary/20 flex items-center justify-center text-primary text-sm font-bold">
-              {profile?.display_name?.[0]?.toUpperCase() || user.email?.[0]?.toUpperCase() || '?'}
-            </div>
+            <Avatar className="w-8 h-8">
+              <AvatarImage src={user.avatarUrl || undefined} alt={profile?.display_name || 'User'} />
+              <AvatarFallback className="bg-primary/20 text-primary text-sm font-bold">
+                {profile?.display_name?.[0]?.toUpperCase() || user.email?.[0]?.toUpperCase() || '?'}
+              </AvatarFallback>
+            </Avatar>
             <div className="flex-1 min-w-0">
               <p className="text-sm font-medium truncate">
                 {profile?.display_name || 'User'}
@@ -248,9 +252,12 @@ export function AppShell({ children }: { children: React.ReactNode }) {
         </div>
         <div className="flex items-center gap-2">
           <SyncStatusIcon />
-          <div className="w-7 h-7 rounded-full bg-primary/20 flex items-center justify-center text-primary text-xs font-bold">
-            {profile?.display_name?.[0]?.toUpperCase() || user.email?.[0]?.toUpperCase() || '?'}
-          </div>
+          <Avatar className="w-7 h-7">
+            <AvatarImage src={user.avatarUrl || undefined} alt={profile?.display_name || 'User'} />
+            <AvatarFallback className="bg-primary/20 text-primary text-xs font-bold">
+              {profile?.display_name?.[0]?.toUpperCase() || user.email?.[0]?.toUpperCase() || '?'}
+            </AvatarFallback>
+          </Avatar>
         </div>
       </div>
 

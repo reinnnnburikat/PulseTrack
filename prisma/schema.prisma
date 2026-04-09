@@ -8,14 +8,16 @@ datasource db {
 }
 
 model User {
-  id        String   @id @default(cuid())
-  email     String   @unique
-  passwordHash String
-  displayName String?
-  avatarUrl  String?
-  bio       String?
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+  id           String   @id @default(cuid())
+  email        String   @unique
+  passwordHash String?
+  displayName  String?
+  avatarUrl    String?
+  bio          String?
+  provider     String   @default("email") // "email" or "google"
+  providerId   String?  // Google sub (user ID from Google)
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
 
   sessions       Session[]
   settings       UserSettings?
