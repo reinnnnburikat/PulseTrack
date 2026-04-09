@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useState, useRef } from 'react'
+import { useEffect, useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { useTimerStore } from '@/store/timer-store'
 import { useAuthStore, useSettingsStore } from '@/store/auth-store'
@@ -62,24 +62,7 @@ export function TimerView() {
     return () => clearInterval(interval)
   }, [timer.status])
 
-  // Audio cue on phase change
-  const prevPhaseRef = useRef(timer.phase)
-  useEffect(() => {
-    if (timer.phase !== prevPhaseRef.current) {
-      try {
-        const ctx = new AudioContext()
-        const osc = ctx.createOscillator()
-        const gain = ctx.createGain()
-        osc.connect(gain)
-        gain.connect(ctx.destination)
-        osc.frequency.value = timer.phase === 'active' ? 440 : 330
-        gain.gain.value = 0.1
-        osc.start()
-        osc.stop(ctx.currentTime + 0.15)
-      } catch {}
-      prevPhaseRef.current = timer.phase
-    }
-  }, [timer.phase])
+  // Audio is now handled by the timer store directly — no manual audio cues needed here
 
   const formatTime = (seconds: number) => {
     const m = Math.floor(seconds / 60)
@@ -124,8 +107,13 @@ export function TimerView() {
     if (timer.status === 'completed') setShowCompleteDialog(true)
   }, [timer.status])
 
+  // Focus mode class
+  const containerClass = timer.focusMode && timer.status !== 'idle'
+    ? 'max-w-lg mx-auto flex flex-col items-center gap-6 py-8 min-h-screen justify-center'
+    : 'max-w-lg mx-auto flex flex-col items-center gap-6 py-4'
+
   return (
-    <div className="max-w-lg mx-auto flex flex-col items-center gap-6 py-4">
+    <div className={containerClass}>
       {/* Profile Selector */}
       {timer.status === 'idle' && (
         <motion.div initial={{ opacity: 0, y: -10 }} animate={{ opacity: 1, y: 0 }} className="w-full">
@@ -251,12 +239,29 @@ export function TimerView() {
 
       {/* Intensity Mode Toggle */}
       {timer.status === 'idle' && (
-        <div className="flex items-center gap-3">
-          <Switch
-            checked={timer.intensityMode}
-            onCheckedChange={(checked) => useSettingsStore.getState().updateSettings({ intensityMode: checked })}
-          />
-          <label className="text-sm text-muted-foreground">Intensity Mode</label>
+        <div className="flex flex-wrap items-center justify-center gap-4">
+          <div className="flex items-center gap-3">
+            <Switch
+              checked={timer.intensityMode}
+              onCheckedChange={(checked) => useSettingsStore.getState().updateSettings({ intensityMode: checked })}
+            />
+            <label className="text-sm text-muted-foreground">Intensity Mode</label>
+          </div>
+        </div>
+      )}
+
+      {/* Focus Mode Toggle + Edge Count */}
+      {timer.status === 'running' && (
+        <div className="flex items-center gap-4">
+          <Button variant="ghost" size="sm" onClick={timer.toggleFocusMode}
+            className={`text-xs ${timer.focusMode ? 'text-primary' : 'text-muted-foreground'}`}>
+            {timer.focusMode ? '✕ Exit Focus' : '⛶ Focus Mode'}
+          </Button>
+          {timer.edgeCount > 0 && (
+            <Badge variant="secondary" className="text-[10px] bg-red-500/10 text-red-300 border-0">
+              Edge #{timer.edgeCount}
+            </Badge>
+          )}
         </div>
       )}
 

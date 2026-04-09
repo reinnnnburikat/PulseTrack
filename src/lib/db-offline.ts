@@ -6,7 +6,7 @@ export class PulseTrackDB extends Dexie {
 
   constructor() {
     super('PulseTrackOffline')
-    this.version(1).stores({
+    this.version(2).stores({
       sessions: '++id, session_id, user_id, synced, created_at'
     })
   }
@@ -28,4 +28,12 @@ export async function markSessionSynced(sessionId: string) {
 
 export async function deleteSyncedSessions() {
   return db.sessions.where('synced').equals(1).delete()
+}
+
+export async function getOfflineSessionCount(userId: string) {
+  return db.sessions.where('user_id').equals(userId).and(s => !s.synced).count()
+}
+
+export async function clearAllOfflineData() {
+  return db.sessions.clear()
 }

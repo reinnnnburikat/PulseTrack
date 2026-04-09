@@ -213,6 +213,41 @@ export function SettingsView() {
         </CardContent>
       </Card>
 
+      {/* Sound & Notifications */}
+      <Card className="bg-card/60 border-border/50">
+        <CardHeader className="pb-3">
+          <CardTitle className="text-sm flex items-center gap-2">
+            <Volume2 className="w-4 h-4 text-primary" /> Sound & Notifications
+          </CardTitle>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          <div className="flex items-center justify-between">
+            <div>
+              <Label className="text-xs">Sound Effects</Label>
+              <p className="text-[10px] text-muted-foreground mt-0.5">Phase transitions, ticks, achievement sounds</p>
+            </div>
+            <Switch checked={settings.soundEnabled} onCheckedChange={(v) => handleUpdate({ soundEnabled: v })} />
+          </div>
+          <div className="flex items-center justify-between">
+            <div>
+              <Label className="text-xs">Browser Notifications</Label>
+              <p className="text-[10px] text-muted-foreground mt-0.5">Session reminders, phase alerts, achievements</p>
+            </div>
+            <Switch checked={settings.notificationsEnabled} onCheckedChange={async (v) => {
+              if (v) {
+                const { requestNotificationPermission } = await import('@/lib/notifications')
+                const granted = await requestNotificationPermission()
+                if (!granted) {
+                  toast.error('Notifications permission denied by browser')
+                  return
+                }
+              }
+              handleUpdate({ notificationsEnabled: v })
+            }} />
+          </div>
+        </CardContent>
+      </Card>
+
       {/* Account */}
       <Card className="bg-card/60 border-border/50">
         <CardHeader className="pb-3">
